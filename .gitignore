@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.venv/
+data/*.db
+data/*.db-*
+saida/*.docx
+saida/*.pdf
+tmp/
+server*.log
