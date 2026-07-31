@@ -85,6 +85,80 @@ def build_items(data: dict[str, list[str]]) -> list[Item]:
     return items
 
 
+def row_to_orcamento(orcamento_id: int, row) -> Orcamento:
+    itens = [
+        Item(
+            codigo=item["codigo"],
+            produto=item["produto"],
+            pmc=item["pmc"],
+            desconto=item["desconto"],
+            valor_unitario=Decimal(item["valor_unitario"]),
+            quantidade=Decimal(item["quantidade"]),
+        )
+        for item in get_itens(orcamento_id)
+    ]
+    return Orcamento(
+        cliente_nome=row["cliente_nome"],
+        cpf=row["cpf"],
+        telefone=row["telefone"],
+        email=row["email"],
+        data_orcamento=row["data_orcamento"],
+        localidade=row["localidade"],
+        itens=itens,
+    )
+
+
+def existing_path(value: str | None) -> Path | None:
+    if not value:
+        return None
+    candidates = [Path(value)]
+    normalized = value.replace("\\", "/")
+    if normalized != value:
+        candidates.append(Path(normalized))
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def update_orcamento_files(
+    orcamento_id: int,
+    *,
+    docx_path: Path | None = None,
+    pdf_path: Path | None = None,
+    pdf_status: str | None = None,
+) -> None:
+    assignments = []
+    values: list[str | None | int] = []
+    if docx_path is not None:
+        assignments.append("docx_path = ?")
+        values.append(str(docx_path))
+    if pdf_path is not None:
+        assignments.append("pdf_path = ?")
+        values.append(str(pdf_path))
+    if pdf_status is not None:
+        assignments.append("pdf_status = ?")
+        values.append(pdf_status)
+    if not assignments:
+        return
+    values.append(orcamento_id)
+    with connect() as conn:
+        conn.execute(
+            f"UPDATE orcamentos SET {', '.join(assignments)} WHERE id = ?",
+            values,
+        )
+
+
+def ensure_docx_file(orcamento_id: int, row) -> Path:
+    existing = existing_path(row["docx_path"])
+    if existing is not None:
+        return existing
+    orcamento = row_to_orcamento(orcamento_id, row)
+    docx_path = render_orcamento(orcamento, sequence=orcamento_id)
+    update_orcamento_files(orcamento_id, docx_path=docx_path)
+    return docx_path
+
+
 def layout(title: str, content: str) -> bytes:
     page = f"""<!doctype html>
 <html lang="pt-BR">
@@ -754,21 +828,18 @@ class Handler(BaseHTTPRequestHandler):
         if row is None:
             return self.respond(404, layout("Erro", '<section class="error">Orçamento não encontrado.</section>'))
 
-        docx_path = Path(row["docx_path"])
-        if not docx_path.exists():
+        try:
+            docx_path = ensure_docx_file(orcamento_id, row)
+        except Exception as exc:
             with connect() as conn:
                 conn.execute(
                     "UPDATE orcamentos SET pdf_path = NULL, pdf_status = ? WHERE id = ?",
-                    ("PDF não gerado: arquivo DOCX indisponível.", orcamento_id),
+                    (f"PDF não gerado: não foi possível recriar o DOCX. {exc}", orcamento_id),
                 )
             return self.redirect(f"/orcamentos/{orcamento_id}")
 
         pdf_path, pdf_status = convert_to_pdf(docx_path)
-        with connect() as conn:
-            conn.execute(
-                "UPDATE orcamentos SET pdf_path = ?, pdf_status = ? WHERE id = ?",
-                (str(pdf_path) if pdf_path else None, pdf_status, orcamento_id),
-            )
+        update_orcamento_files(orcamento_id, pdf_path=pdf_path, pdf_status=pdf_status)
         return self.redirect(f"/orcamentos/{orcamento_id}")
 
     def handle_delete(self, path: str) -> None:
@@ -802,9 +873,30 @@ class Handler(BaseHTTPRequestHandler):
             row = None
         if row is None or kind not in ("docx", "pdf"):
             return self.respond(404, layout("Erro", '<section class="error">Arquivo não encontrado.</section>'))
-        file_path = Path(row[f"{kind}_path"] or "")
-        if not file_path.exists():
-            return self.respond(404, layout("Erro", '<section class="error">Arquivo indisponível.</section>'))
+        orcamento_id = int(id_raw)
+        if kind == "docx":
+            try:
+                file_path = ensure_docx_file(orcamento_id, row)
+            except Exception as exc:
+                return self.respond(
+                    500,
+                    layout("Erro", f'<section class="error">Não foi possível gerar o DOCX: {esc(exc)}</section>'),
+                )
+        else:
+            file_path = existing_path(row["pdf_path"])
+            if file_path is None:
+                try:
+                    docx_path = ensure_docx_file(orcamento_id, row)
+                except Exception as exc:
+                    return self.respond(
+                        500,
+                        layout("Erro", f'<section class="error">Não foi possível gerar o DOCX para criar o PDF: {esc(exc)}</section>'),
+                    )
+                pdf_path, pdf_status = convert_to_pdf(docx_path)
+                update_orcamento_files(orcamento_id, pdf_path=pdf_path, pdf_status=pdf_status)
+                if pdf_path is None:
+                    return self.respond(404, layout("Erro", f'<section class="error">{esc(pdf_status)}</section>'))
+                file_path = pdf_path
         content_type = mimetypes.guess_type(file_path.name)[0] or "application/octet-stream"
         return self.send_file(file_path, content_type)
 
