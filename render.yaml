@@ -4,6 +4,13 @@ services:
     runtime: docker
     plan: free
     dockerfilePath: ./Dockerfile
+    healthCheckPath: /healthz
     envVars:
       - key: HOST
         value: 0.0.0.0
+      - key: DB_PATH
+        value: /var/data/orcamentos.db
+    disk:
+      name: orcamento-data
+      mountPath: /var/data
+      sizeGB: 1

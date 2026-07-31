@@ -4,6 +4,7 @@ import html
 import os
 import mimetypes
 from decimal import Decimal
+from http.cookies import SimpleCookie
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -25,18 +26,31 @@ from .generator import (
 from .storage import (
     Item,
     Orcamento,
+    add_farmaceutico,
     connect,
+    create_session,
+    create_user,
+    delete_session,
+    delete_farmaceutico,
     delete_orcamento,
+    get_user_by_session,
     get_itens,
     get_orcamento,
+    has_users,
     init_db,
+    list_farmaceuticos,
     list_orcamentos,
     save_orcamento,
+    verify_login,
 )
 
 
-HOST = os.environ.get("HOST", "127.0.0.1")
+HOST = os.environ.get("HOST", "0.0.0.0" if os.environ.get("RENDER") else "127.0.0.1")
 PORT = 8000
+ASSETS_DIR = Path("assets")
+LOGO_FILENAME = "logo_preco_popular.svg"
+SESSION_COOKIE = "orcamento_session"
+SESSION_MAX_AGE = 12 * 60 * 60
 
 
 def esc(value: object) -> str:
@@ -160,7 +174,21 @@ def ensure_docx_file(orcamento_id: int, row) -> Path:
     return docx_path
 
 
-def layout(title: str, content: str) -> bytes:
+def layout(title: str, content: str, *, show_nav: bool = True) -> bytes:
+    nav_html = ""
+    if show_nav:
+        nav_html = """
+    <nav>
+      <a href="/">Novo orçamento</a>
+      <a href="/historico">Histórico</a>
+      <a href="/farmaceuticos">Farmacêuticos</a>
+      <a href="/validar-modelo">Validar modelo</a>
+      <a href="/exportar">Exportar CSV</a>
+      <form method="post" action="/logout">
+        <button class="nav-logout" type="submit">Sair</button>
+      </form>
+    </nav>
+        """
     page = f"""<!doctype html>
 <html lang="pt-BR">
 <head>
@@ -169,45 +197,94 @@ def layout(title: str, content: str) -> bytes:
   <title>{esc(title)}</title>
   <style>
     :root {{
-      --bg: #f6f7f9;
+      --bg: #f5f7f6;
       --panel: #ffffff;
-      --ink: #1d2430;
-      --muted: #5f6b7a;
-      --line: #d9dee7;
-      --accent: #1967d2;
-      --accent-dark: #0f4fa8;
-      --ok: #157347;
-      --warn: #9a5b00;
+      --ink: #202724;
+      --muted: #65716b;
+      --line: #dfe6e1;
+      --line-strong: #cbd8d0;
+      --accent: rgb(7, 143, 71);
+      --accent-dark: #056d36;
+      --accent-soft: #edf7f1;
+      --brand-red: #d71932;
+      --brand-red-dark: #b91127;
+      --ok: #078f47;
+      --warn: #8a5a00;
     }}
     * {{ box-sizing: border-box; }}
     body {{
       margin: 0;
-      font-family: Arial, Helvetica, sans-serif;
+      font-family: "Segoe UI", Arial, Helvetica, sans-serif;
       background: var(--bg);
       color: var(--ink);
     }}
     header {{
       background: #ffffff;
-      border-bottom: 1px solid var(--line);
-      padding: 18px 28px;
+      border-bottom: 1px solid var(--line-strong);
+      padding: 14px 22px;
+      display: grid;
+      grid-template-columns: auto minmax(520px, 1fr);
+      align-items: center;
+      gap: 14px;
+      box-shadow: 0 1px 0 rgba(7, 143, 71, .04);
+    }}
+    .brand {{
       display: flex;
       align-items: center;
-      justify-content: space-between;
-      gap: 16px;
+      gap: 14px;
+      min-width: 0;
+    }}
+    .brand-logo {{
+      width: 142px;
+      height: auto;
+      display: block;
+      flex: 0 0 auto;
     }}
     header h1 {{
       margin: 0;
-      font-size: 20px;
+      font-size: 18px;
+      color: rgb(7, 143, 71);
       letter-spacing: 0;
+      line-height: 1.2;
+      white-space: nowrap;
+    }}
+    nav {{
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 6px;
+    }}
+    nav form {{
+      margin: 0;
     }}
     nav a {{
-      color: var(--accent);
+      white-space: nowrap;
+      color: #2e4f3d;
       text-decoration: none;
       font-weight: 700;
-      margin-left: 18px;
+      margin-left: 0;
+      padding: 7px 8px;
+      border-radius: 6px;
+      transition: background .16s ease, color .16s ease;
+    }}
+    nav a:hover {{
+      background: var(--accent-soft);
+      color: var(--accent-dark);
+    }}
+    .nav-logout {{
+      min-height: 32px;
+      height: 32px;
+      padding: 6px 10px;
+      background: #eef3f0;
+      color: #2e4f3d;
+      border: 1px solid var(--line);
+    }}
+    .nav-logout:hover {{
+      background: #e1ebe5;
     }}
     main {{
-      width: min(1180px, calc(100vw - 32px));
+      width: min(1120px, calc(100vw - 32px));
       margin: 24px auto 48px;
     }}
     section {{
@@ -216,10 +293,12 @@ def layout(title: str, content: str) -> bytes:
       border-radius: 8px;
       padding: 20px;
       margin-bottom: 18px;
+      box-shadow: 0 1px 2px rgba(32, 39, 36, .035);
     }}
     h2 {{
       font-size: 16px;
       margin: 0 0 16px;
+      color: #22382d;
     }}
     label {{
       display: block;
@@ -228,7 +307,8 @@ def layout(title: str, content: str) -> bytes:
       margin-bottom: 6px;
       font-weight: 700;
     }}
-    input {{
+    input,
+    select {{
       width: 100%;
       height: 38px;
       border: 1px solid var(--line);
@@ -238,11 +318,13 @@ def layout(title: str, content: str) -> bytes:
       background: #fff;
       color: var(--ink);
     }}
-    input:focus {{
-      outline: 2px solid rgba(25, 103, 210, .2);
+    input:focus,
+    select:focus {{
+      outline: 2px solid rgba(7, 143, 71, .16);
       border-color: var(--accent);
     }}
-    input.invalid {{
+    input.invalid,
+    select.invalid {{
       border-color: #b42318;
       background: #fff8f8;
     }}
@@ -273,6 +355,7 @@ def layout(title: str, content: str) -> bytes:
       text-align: left;
       font-size: 12px;
       color: var(--muted);
+      background: #fafcfb;
     }}
     th:nth-child(1) {{ width: 95px; }}
     th:nth-child(2) {{ width: auto; }}
@@ -286,6 +369,22 @@ def layout(title: str, content: str) -> bytes:
       align-items: center;
       justify-content: flex-end;
     }}
+    .final-actions {{
+      justify-content: flex-start;
+      gap: 18px;
+      align-items: end;
+    }}
+    .responsavel-select {{
+      flex: 1 1 320px;
+      max-width: 430px;
+    }}
+    .final-actions .primary {{
+      height: 38px;
+      min-height: 38px;
+      padding-top: 0;
+      padding-bottom: 0;
+      margin-bottom: 0;
+    }}
     button, .button {{
       border: 0;
       border-radius: 6px;
@@ -297,35 +396,42 @@ def layout(title: str, content: str) -> bytes:
       align-items: center;
       justify-content: center;
       min-height: 38px;
+      transition: background .16s ease, box-shadow .16s ease, transform .16s ease;
     }}
     button.primary, .button.primary {{
       background: var(--accent);
       color: #fff;
     }}
-    button.primary:hover, .button.primary:hover {{ background: var(--accent-dark); }}
+    button.primary:hover, .button.primary:hover {{
+      background: var(--accent-dark);
+      box-shadow: 0 2px 8px rgba(7, 143, 71, .18);
+    }}
     button.secondary, .button.secondary {{
-      background: #e9edf5;
+      background: #e9efec;
       color: var(--ink);
     }}
+    button.secondary:hover, .button.secondary:hover {{
+      background: #dfe8e3;
+    }}
     button.danger, .button.danger {{
-      background: #d24a3f;
+      background: var(--brand-red);
       color: #fff;
     }}
     button.danger:hover, .button.danger:hover {{
-      background: #bf382e;
+      background: var(--brand-red-dark);
     }}
     button.success, .button.success {{
-      background: #2f9a60;
+      background: #2fa35e;
       color: #fff;
     }}
     button.success:hover, .button.success:hover {{
-      background: #258750;
+      background: #23894d;
     }}
     button.icon {{
       width: 34px;
       min-height: 34px;
       padding: 0;
-      background: #f0f2f6;
+      background: #eef3f0;
       color: #374151;
     }}
     .history td, .history th {{ font-size: 13px; }}
@@ -375,36 +481,85 @@ def layout(title: str, content: str) -> bytes:
     .muted {{ color: var(--muted); }}
     .ok {{ color: var(--ok); font-weight: 700; }}
     .warn {{ color: var(--warn); font-weight: 700; }}
+    .manager-row {{
+      display: grid;
+      grid-template-columns: minmax(220px, 1fr) auto;
+      gap: 10px;
+      align-items: end;
+    }}
+    .manager-row button {{
+      height: 38px;
+      min-height: 38px;
+      padding-top: 0;
+      padding-bottom: 0;
+    }}
+    .manager-row.compact {{
+      grid-template-columns: minmax(240px, 1fr) auto;
+      align-items: center;
+    }}
+    .manager-row.compact input {{
+      height: 38px;
+    }}
+    .manager-row.compact button {{
+      align-self: center;
+    }}
+    .manager-row.create-row {{
+      grid-template-columns: minmax(320px, 640px) auto;
+      justify-content: start;
+    }}
     .error {{
-      background: #fff4f4;
-      border-color: #ffd0d0;
-      color: #8a1f1f;
+      background: #fff6f7;
+      border-color: #f3c9d0;
+      color: #8a1f2b;
       font-weight: 700;
+    }}
+    .auth-shell {{
+      min-height: calc(100vh - 120px);
+      display: grid;
+      place-items: center;
+    }}
+    .auth-card {{
+      width: min(430px, 100%);
+    }}
+    .auth-card .brand-logo {{
+      width: 160px;
+      margin-bottom: 18px;
+    }}
+    .auth-card form {{
+      display: grid;
+      gap: 14px;
     }}
     .total-box {{
       font-size: 18px;
       font-weight: 800;
       text-align: right;
     }}
+    @media (max-width: 1320px) {{
+      header {{ grid-template-columns: 1fr; align-items: flex-start; }}
+      nav {{ justify-content: flex-start; }}
+    }}
     @media (max-width: 860px) {{
-      header {{ align-items: flex-start; flex-direction: column; }}
-      nav a {{ margin-left: 0; margin-right: 12px; }}
+      .brand {{ align-items: flex-start; flex-direction: column; gap: 8px; }}
+      .brand-logo {{ width: 138px; }}
+      header h1 {{ white-space: normal; }}
+      nav a {{ margin-left: 0; margin-right: 6px; }}
       .grid {{ grid-template-columns: 1fr; }}
       .span-2, .span-4 {{ grid-column: span 1; }}
       table {{ min-width: 850px; }}
       .table-wrap {{ overflow-x: auto; }}
+      .manager-row,
+      .manager-row.compact,
+      .manager-row.create-row {{ grid-template-columns: 1fr; }}
     }}
   </style>
 </head>
 <body>
   <header>
-    <h1>Gerador de Orçamentos CLAMED</h1>
-    <nav>
-      <a href="/">Novo orçamento</a>
-      <a href="/historico">Histórico</a>
-      <a href="/validar-modelo">Validar modelo</a>
-      <a href="/exportar">Exportar CSV</a>
-    </nav>
+    <div class="brand">
+      <img class="brand-logo" src="/assets/{LOGO_FILENAME}" alt="Preço Popular">
+      <h1>Gerador de Orçamentos CLAMED</h1>
+    </div>
+    {nav_html}
   </header>
   <main>{content}</main>
 </body>
@@ -432,6 +587,85 @@ def field_message(field_error: str | None, key: str, message: str) -> str:
     if field_error != key:
         return ""
     return f'<div class="field-error">{esc(message)}</div>'
+
+
+def setup_page(error: str = "") -> bytes:
+    error_html = f'<section class="error">{esc(error)}</section>' if error else ""
+    content = f"""
+<div class="auth-shell">
+  <section class="auth-card">
+    <img class="brand-logo" src="/assets/{LOGO_FILENAME}" alt="Preço Popular">
+    <h2>Criar acesso administrador</h2>
+    <p class="muted">Cadastre o primeiro usuário para proteger o app.</p>
+    {error_html}
+    <form method="post" action="/setup" autocomplete="off">
+      <div>
+        <label for="username">Usuário</label>
+        <input id="username" name="username" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" required>
+      </div>
+      <div>
+        <label for="password">Senha</label>
+        <input id="password" name="password" type="password" autocomplete="new-password" required>
+      </div>
+      <div>
+        <label for="password_confirm">Confirmar senha</label>
+        <input id="password_confirm" name="password_confirm" type="password" autocomplete="new-password" required>
+      </div>
+      <button class="primary" type="submit">Criar acesso</button>
+    </form>
+  </section>
+</div>
+"""
+    return layout("Criar acesso", content, show_nav=False)
+
+
+def login_page(error: str = "") -> bytes:
+    error_html = f'<section class="error">{esc(error)}</section>' if error else ""
+    content = f"""
+<div class="auth-shell">
+  <section class="auth-card">
+    <img class="brand-logo" src="/assets/{LOGO_FILENAME}" alt="Preço Popular">
+    <h2>Entrar no app</h2>
+    {error_html}
+    <form method="post" action="/login" autocomplete="off">
+      <div>
+        <label for="username">Usuário</label>
+        <input id="username" name="username" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" required>
+      </div>
+      <div>
+        <label for="password">Senha</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required>
+      </div>
+      <button class="primary" type="submit">Entrar</button>
+    </form>
+  </section>
+</div>
+"""
+    return layout("Login", content, show_nav=False)
+
+
+def farmaceutico_select(data: dict[str, list[str]] | None, field_error: str | None = None) -> str:
+    selected = form_value(data, "farmaceutico_responsavel")
+    options = [
+        f'<option value="" disabled{" selected" if not selected else ""}>Farmacêutico(a)</option>'
+    ]
+    found_selected = not selected
+    for row in list_farmaceuticos():
+        nome = row["nome"]
+        is_selected = nome == selected
+        found_selected = found_selected or is_selected
+        options.append(
+            f'<option value="{esc(nome)}"{" selected" if is_selected else ""}>{esc(nome)}</option>'
+        )
+    if selected and not found_selected:
+        options.append(f'<option value="{esc(selected)}" selected>{esc(selected)}</option>')
+    css_class = "form-select invalid" if field_error == "farmaceutico_responsavel" else "form-select"
+    return f"""
+        <select id="farmaceutico_responsavel" name="farmaceutico_responsavel" class="{css_class}" aria-label="Farmacêutico(a) responsável" required>
+          {''.join(options)}
+        </select>
+        {field_message(field_error, 'farmaceutico_responsavel', 'Informe o farmacêutico(a) responsável.')}
+    """
 
 
 def product_rows_from_form(data: dict[str, list[str]] | None) -> str:
@@ -512,10 +746,6 @@ def form_page(
         <label for="cliente_nome">Cliente</label>
         <input id="cliente_nome" name="cliente_nome" value="{esc(form_value(data, 'cliente_nome'))}" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" required>
       </div>
-      <div class="span-2">
-        <label for="farmaceutico_responsavel">Farmacêutico(a) responsável</label>
-        <input id="farmaceutico_responsavel" name="farmaceutico_responsavel" value="{esc(form_value(data, 'farmaceutico_responsavel'))}" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" required>
-      </div>
       <div>
         <label for="cpf">CPF</label>
         <input id="cpf" name="cpf" value="{esc(form_value(data, 'cpf'))}" inputmode="numeric" placeholder="000.000.000-00" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"{field_class(field_error, 'cpf')}>
@@ -567,7 +797,11 @@ def form_page(
   </section>
 
   <section>
-    <div class="actions">
+    <div class="actions final-actions">
+      <div class="responsavel-select">
+        <label for="farmaceutico_responsavel">Farm. resp.</label>
+        {farmaceutico_select(data, field_error)}
+      </div>
       <button class="primary" type="submit">Salvar e gerar arquivos</button>
     </div>
   </section>
@@ -603,7 +837,7 @@ function removeRow(button) {{
   }}
   button.closest("tr").remove();
 }}
-document.querySelectorAll("form, input").forEach((element) => {{
+document.querySelectorAll("form, input, select").forEach((element) => {{
   element.setAttribute("autocomplete", "off");
 }});
 </script>
@@ -724,6 +958,59 @@ def history_page() -> bytes:
     return layout("Histórico", content)
 
 
+def farmaceuticos_page(error: str = "") -> bytes:
+    error_html = f'<section class="error">{esc(error)}</section>' if error else ""
+    rows = "".join(
+        f"""
+        <tr>
+          <td>
+            <div class="manager-row compact">
+              <input id="farmaceutico_{row['id']}" value="{esc(row['nome'])}" readonly>
+            </div>
+          </td>
+          <td class="row-actions">
+            <form method="post" action="/farmaceuticos/{row['id']}/excluir" onsubmit="return confirm('Excluir este responsável da lista? Os orçamentos antigos não serão alterados.');">
+              <button class="danger" type="submit">Excluir</button>
+            </form>
+          </td>
+        </tr>
+        """
+        for row in list_farmaceuticos(include_inactive=True)
+    )
+    if not rows:
+        rows = '<tr><td colspan="2" class="muted">Nenhum farmacêutico(a) cadastrado ainda.</td></tr>'
+    content = f"""
+{error_html}
+<section>
+  <h2>Novo responsável</h2>
+  <form method="post" action="/farmaceuticos" autocomplete="off">
+    <div class="manager-row create-row">
+      <div>
+        <label for="novo_farmaceutico">Farmacêutico(a)</label>
+        <input id="novo_farmaceutico" name="nome" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" required>
+      </div>
+      <button class="primary" type="submit">Adicionar</button>
+    </div>
+  </form>
+</section>
+<section>
+  <h2>Responsáveis cadastrados</h2>
+  <div class="table-wrap">
+    <table class="history">
+      <thead><tr><th>Farmacêutico(a)</th><th></th></tr></thead>
+      <tbody>{rows}</tbody>
+    </table>
+  </div>
+</section>
+<section>
+  <div class="actions">
+    <a class="button secondary" href="/">Voltar ao formulário</a>
+  </div>
+</section>
+"""
+    return layout("Farmacêuticos", content)
+
+
 def template_validation_page() -> bytes:
     ok, messages = validate_template()
     status = "ok" if ok else "warn"
@@ -752,25 +1039,100 @@ def template_validation_page() -> bytes:
 
 
 class Handler(BaseHTTPRequestHandler):
+    def request_session_token(self) -> str | None:
+        raw_cookie = self.headers.get("Cookie")
+        if not raw_cookie:
+            return None
+        cookie = SimpleCookie()
+        cookie.load(raw_cookie)
+        morsel = cookie.get(SESSION_COOKIE)
+        return morsel.value if morsel else None
+
+    def current_user(self):
+        return get_user_by_session(self.request_session_token())
+
+    def is_https(self) -> bool:
+        return self.headers.get("X-Forwarded-Proto", "").lower() == "https"
+
+    def session_cookie(self, token: str) -> str:
+        parts = [
+            f"{SESSION_COOKIE}={token}",
+            "Path=/",
+            f"Max-Age={SESSION_MAX_AGE}",
+            "HttpOnly",
+            "SameSite=Lax",
+        ]
+        if self.is_https():
+            parts.append("Secure")
+        return "; ".join(parts)
+
+    def clear_session_cookie(self) -> str:
+        parts = [
+            f"{SESSION_COOKIE}=",
+            "Path=/",
+            "Max-Age=0",
+            "HttpOnly",
+            "SameSite=Lax",
+        ]
+        if self.is_https():
+            parts.append("Secure")
+        return "; ".join(parts)
+
     def respond(self, status: int, body: bytes, content_type: str = "text/html; charset=utf-8") -> None:
         self.send_response(status)
         self.send_header("Content-Type", content_type)
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Referrer-Policy", "same-origin")
+        if content_type.startswith("text/html"):
+            self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
 
-    def redirect(self, path: str) -> None:
+    def redirect(self, path: str, extra_headers: dict[str, str] | None = None) -> None:
         self.send_response(303)
         self.send_header("Location", path)
+        self.send_header("Cache-Control", "no-store")
+        if extra_headers:
+            for key, value in extra_headers.items():
+                self.send_header(key, value)
         self.end_headers()
 
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         path = parsed.path
+        if path == "/healthz":
+            return self.respond(200, b"ok", "text/plain; charset=utf-8")
+        if path == f"/assets/{LOGO_FILENAME}":
+            logo_path = ASSETS_DIR / LOGO_FILENAME
+            if logo_path.exists():
+                return self.send_file(logo_path, "image/svg+xml", disposition="inline")
+            return self.respond(404, layout("Erro", '<section class="error">Logo não encontrada.</section>'))
+        if path == "/setup":
+            if has_users():
+                return self.redirect("/login")
+            return self.respond(200, setup_page())
+        if path == "/login":
+            if not has_users():
+                return self.redirect("/setup")
+            if self.current_user() is not None:
+                return self.redirect("/")
+            return self.respond(200, login_page())
+        if path == "/favicon.ico":
+            return self.respond(404, b"", "text/plain")
+
+        if not has_users():
+            return self.redirect("/setup")
+        if self.current_user() is None:
+            return self.redirect("/login")
+
         if path == "/":
             return self.respond(200, form_page())
         if path == "/historico":
             return self.respond(200, history_page())
+        if path == "/farmaceuticos":
+            return self.respond(200, farmaceuticos_page())
         if path == "/validar-modelo":
             return self.respond(200, template_validation_page())
         if path == "/exportar":
@@ -788,6 +1150,24 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         path = urlparse(self.path).path
+        if path == "/setup":
+            return self.handle_setup()
+        if path == "/login":
+            return self.handle_login()
+        if path == "/logout":
+            token = self.request_session_token()
+            delete_session(token)
+            return self.redirect("/login", {"Set-Cookie": self.clear_session_cookie()})
+
+        if not has_users():
+            return self.redirect("/setup")
+        if self.current_user() is None:
+            return self.redirect("/login")
+
+        if path == "/farmaceuticos":
+            return self.handle_add_farmaceutico()
+        if path.startswith("/farmaceuticos/") and path.endswith("/excluir"):
+            return self.handle_delete_farmaceutico(path)
         if path.startswith("/orcamentos/") and path.endswith("/gerar-pdf"):
             return self.handle_generate_pdf(path)
         if path.startswith("/orcamentos/") and path.endswith("/excluir"):
@@ -820,7 +1200,24 @@ class Handler(BaseHTTPRequestHandler):
             if not orcamento.cliente_nome:
                 raise ValueError("Informe o nome do cliente.")
             if not orcamento.farmaceutico_responsavel:
-                raise ValueError("Informe o farmacêutico(a) responsável.")
+                return self.respond(
+                    400,
+                    form_page(
+                        "Campo Farm. resp.: informe o farmacêutico(a) responsável.",
+                        data,
+                        "farmaceutico_responsavel",
+                    ),
+                )
+            farmaceuticos_ativos = {row["nome"] for row in list_farmaceuticos()}
+            if orcamento.farmaceutico_responsavel not in farmaceuticos_ativos:
+                return self.respond(
+                    400,
+                    form_page(
+                        "Campo Farm. resp.: selecione um responsável cadastrado.",
+                        data,
+                        "farmaceutico_responsavel",
+                    ),
+                )
             draft_path = render_orcamento(orcamento)
             pdf_path = None
             pdf_status = "PDF pendente: aguardando geração do arquivo final."
@@ -837,6 +1234,57 @@ class Handler(BaseHTTPRequestHandler):
             return self.redirect(f"/orcamentos/{orcamento_id}")
         except Exception as exc:
             return self.respond(400, form_page(str(exc), data))
+
+    def handle_setup(self) -> None:
+        if has_users():
+            return self.redirect("/login")
+        length = int(self.headers.get("Content-Length", "0"))
+        data = parse_form(self.rfile.read(length))
+        username = first(data, "username")
+        password = first(data, "password")
+        password_confirm = first(data, "password_confirm")
+        try:
+            if password != password_confirm:
+                raise ValueError("As senhas não conferem.")
+            user_id = create_user(username, password)
+            token = create_session(user_id)
+        except Exception as exc:
+            return self.respond(400, setup_page(str(exc)))
+        return self.redirect("/", {"Set-Cookie": self.session_cookie(token)})
+
+    def handle_login(self) -> None:
+        if not has_users():
+            return self.redirect("/setup")
+        length = int(self.headers.get("Content-Length", "0"))
+        data = parse_form(self.rfile.read(length))
+        user = verify_login(first(data, "username"), first(data, "password"))
+        if user is None:
+            return self.respond(401, login_page("Usuário ou senha inválidos."))
+        token = create_session(int(user["id"]))
+        return self.redirect("/", {"Set-Cookie": self.session_cookie(token)})
+
+    def handle_add_farmaceutico(self) -> None:
+        length = int(self.headers.get("Content-Length", "0"))
+        data = parse_form(self.rfile.read(length))
+        try:
+            add_farmaceutico(first(data, "nome"))
+        except Exception as exc:
+            return self.respond(400, farmaceuticos_page(str(exc)))
+        return self.redirect("/farmaceuticos")
+
+    def handle_delete_farmaceutico(self, path: str) -> None:
+        parts = path.strip("/").split("/")
+        if len(parts) != 3:
+            return self.respond(404, layout("Erro", '<section class="error">Exclusão inválida.</section>'))
+        _, id_raw, action = parts
+        if action != "excluir":
+            return self.respond(404, layout("Erro", '<section class="error">Exclusão inválida.</section>'))
+        try:
+            farmaceutico_id = int(id_raw)
+        except ValueError:
+            return self.respond(404, layout("Erro", '<section class="error">Responsável inválido.</section>'))
+        delete_farmaceutico(farmaceutico_id)
+        return self.redirect("/farmaceuticos")
 
     def handle_generate_pdf(self, path: str) -> None:
         parts = path.strip("/").split("/")
@@ -931,6 +1379,10 @@ class Handler(BaseHTTPRequestHandler):
         data = path.read_bytes()
         self.send_response(200)
         self.send_header("Content-Type", content_type)
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "same-origin")
+        if path.suffix.lower() in {".docx", ".pdf", ".csv"}:
+            self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Content-Disposition", f'{disposition}; filename="{path.name}"')
         self.end_headers()
@@ -945,7 +1397,8 @@ def run() -> None:
     preferred_port = int(os.environ.get("PORT", PORT))
     server = None
     selected_port = preferred_port
-    for candidate in range(preferred_port, preferred_port + 20):
+    candidates = [preferred_port] if os.environ.get("RENDER") else range(preferred_port, preferred_port + 20)
+    for candidate in candidates:
         try:
             server = ThreadingHTTPServer((HOST, candidate), Handler)
             selected_port = candidate

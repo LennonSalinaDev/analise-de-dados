@@ -32,6 +32,22 @@ http://127.0.0.1:8000
 
 Se a porta `8000` estiver ocupada, o sistema tentará automaticamente as próximas portas livres e mostrará o endereço correto no terminal.
 
+## Acesso ao app
+
+No primeiro acesso, o sistema abre a tela de criação do usuário administrador em:
+
+```text
+http://127.0.0.1:8000/setup
+```
+
+Depois disso, o app passa a exigir login e senha em:
+
+```text
+http://127.0.0.1:8000/login
+```
+
+As senhas não são salvas em texto puro. O banco guarda apenas hash com sal, e o acesso usa cookie de sessão `HttpOnly` com expiração.
+
 ## Pastas
 
 - `modelos/`: modelos Word usados como base. Se houver mais de um `.docx`, o sistema usa o primeiro em ordem alfabética.
@@ -41,6 +57,12 @@ Se a porta `8000` estiver ocupada, o sistema tentará automaticamente as próxim
 ## Histórico
 
 A tela `Histórico` permite abrir, baixar e excluir orçamentos individualmente. Ao excluir, o sistema remove o registro do banco, os itens vinculados e os arquivos DOCX/PDF gerados para aquele orçamento.
+
+## Farmacêuticos responsáveis
+
+A tela `Farmacêuticos` permite cadastrar, editar e excluir os nomes que aparecem no seletor `Farm. resp.` do formulário. A exclusão remove o nome apenas da lista de seleção; orçamentos antigos continuam guardando o texto do responsável que foi usado na criação.
+
+No formulário de orçamento, o responsável fica na última seção, junto ao botão `Salvar e gerar arquivos`, e precisa ser escolhido a partir da lista cadastrada.
 
 O campo `E-mail` fica vazio por padrão e é salvo como `NULL` quando não for preenchido. O campo `Data` usa seletor de data no formulário e é salvo no formato `AAAA-MM-DD`; no orçamento Word ele é convertido automaticamente para o texto usado no modelo.
 
@@ -96,6 +118,16 @@ Configuração esperada:
 Runtime/Language: Docker
 Dockerfile Path: ./Dockerfile
 ```
+
+O serviço usa:
+
+```text
+Health Check Path: /healthz
+DB_PATH: /var/data/orcamentos.db
+HOST: 0.0.0.0
+```
+
+O `render.yaml` também define um disco persistente em `/var/data` para guardar o banco SQLite. Isso é importante porque o login, os responsáveis e o histórico ficam no banco. Sem disco persistente, esses dados podem ser perdidos em reinícios ou redeploys.
 
 Se você estiver criando manualmente como Python, o DOCX funciona, mas o PDF não terá LibreOffice instalado por padrão. Para gerar PDF na nuvem, use Docker.
 

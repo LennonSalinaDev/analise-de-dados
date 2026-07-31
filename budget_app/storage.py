@@ -1,14 +1,18 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
+import os
+import secrets
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
 from typing import Iterable
 
 
-DB_PATH = Path("data/orcamentos.db")
+DB_PATH = Path(os.environ.get("DB_PATH", "data/orcamentos.db"))
 
 
 @dataclass
@@ -108,6 +112,40 @@ def init_db() -> None:
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS farmaceuticos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nome TEXT NOT NULL UNIQUE,
+                ativo INTEGER NOT NULL DEFAULT 1,
+                criado_em TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS app_users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL,
+                perfil TEXT NOT NULL DEFAULT 'admin',
+                criado_em TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS app_sessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                token_hash TEXT NOT NULL UNIQUE,
+                criado_em TEXT NOT NULL,
+                expira_em TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES app_users(id)
+            )
+            """
+        )
+        seed_farmaceuticos_from_history(conn)
 
 
 def migrate_nullable_email(conn: sqlite3.Connection) -> None:
@@ -158,6 +196,207 @@ def migrate_farmaceutico_responsavel(conn: sqlite3.Connection) -> None:
     conn.execute(
         "ALTER TABLE orcamentos ADD COLUMN farmaceutico_responsavel TEXT NOT NULL DEFAULT ''"
     )
+
+
+def seed_farmaceuticos_from_history(conn: sqlite3.Connection) -> None:
+    rows = conn.execute(
+        """
+        SELECT DISTINCT farmaceutico_responsavel
+        FROM orcamentos
+        WHERE TRIM(farmaceutico_responsavel) <> ''
+        """
+    ).fetchall()
+    now = datetime.now().isoformat(timespec="seconds")
+    conn.executemany(
+        """
+        INSERT OR IGNORE INTO farmaceuticos (nome, ativo, criado_em)
+        VALUES (?, 1, ?)
+        """,
+        [(row["farmaceutico_responsavel"], now) for row in rows],
+    )
+
+
+def list_farmaceuticos(include_inactive: bool = False) -> list[sqlite3.Row]:
+    with connect() as conn:
+        if include_inactive:
+            query = "SELECT * FROM farmaceuticos ORDER BY ativo DESC, nome COLLATE NOCASE"
+            return list(conn.execute(query))
+        return list(
+            conn.execute(
+                """
+                SELECT *
+                FROM farmaceuticos
+                WHERE ativo = 1
+                ORDER BY nome COLLATE NOCASE
+                """
+            )
+        )
+
+
+def get_farmaceutico(farmaceutico_id: int) -> sqlite3.Row | None:
+    with connect() as conn:
+        return conn.execute(
+            "SELECT * FROM farmaceuticos WHERE id = ?",
+            (farmaceutico_id,),
+        ).fetchone()
+
+
+def add_farmaceutico(nome: str) -> None:
+    nome = nome.strip()
+    if not nome:
+        raise ValueError("Informe o nome do farmacêutico(a).")
+    with connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO farmaceuticos (nome, ativo, criado_em)
+            VALUES (?, 1, ?)
+            ON CONFLICT(nome) DO UPDATE SET ativo = 1
+            """,
+            (nome, datetime.now().isoformat(timespec="seconds")),
+        )
+
+
+def update_farmaceutico(farmaceutico_id: int, nome: str, ativo: bool = True) -> None:
+    nome = nome.strip()
+    if not nome:
+        raise ValueError("Informe o nome do farmacêutico(a).")
+    with connect() as conn:
+        try:
+            conn.execute(
+                """
+                UPDATE farmaceuticos
+                SET nome = ?, ativo = ?
+                WHERE id = ?
+                """,
+                (nome, 1 if ativo else 0, farmaceutico_id),
+            )
+        except sqlite3.IntegrityError as exc:
+            raise ValueError("Já existe um responsável com este nome.") from exc
+
+
+def delete_farmaceutico(farmaceutico_id: int) -> None:
+    with connect() as conn:
+        conn.execute("DELETE FROM farmaceuticos WHERE id = ?", (farmaceutico_id,))
+
+
+def password_hash(password: str, salt: str | None = None, iterations: int = 260_000) -> str:
+    salt = salt or secrets.token_hex(16)
+    digest = hashlib.pbkdf2_hmac(
+        "sha256",
+        password.encode("utf-8"),
+        bytes.fromhex(salt),
+        iterations,
+    ).hex()
+    return f"pbkdf2_sha256${iterations}${salt}${digest}"
+
+
+def verify_password(password: str, stored_hash: str) -> bool:
+    try:
+        algorithm, iterations_raw, salt, digest = stored_hash.split("$", 3)
+        iterations = int(iterations_raw)
+    except ValueError:
+        return False
+    if algorithm != "pbkdf2_sha256":
+        return False
+    candidate = password_hash(password, salt=salt, iterations=iterations).split("$", 3)[-1]
+    return hmac.compare_digest(candidate, digest)
+
+
+def token_hash(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def has_users() -> bool:
+    with connect() as conn:
+        row = conn.execute("SELECT 1 FROM app_users LIMIT 1").fetchone()
+        return row is not None
+
+
+def create_user(username: str, password: str, perfil: str = "admin") -> int:
+    username = username.strip()
+    if not username:
+        raise ValueError("Informe o usuário.")
+    if len(password) < 8:
+        raise ValueError("A senha deve ter pelo menos 8 caracteres.")
+    with connect() as conn:
+        try:
+            cur = conn.execute(
+                """
+                INSERT INTO app_users (username, password_hash, perfil, criado_em)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    username,
+                    password_hash(password),
+                    perfil,
+                    datetime.now().isoformat(timespec="seconds"),
+                ),
+            )
+        except sqlite3.IntegrityError as exc:
+            raise ValueError("Este usuário já existe.") from exc
+        return int(cur.lastrowid)
+
+
+def verify_login(username: str, password: str) -> sqlite3.Row | None:
+    username = username.strip()
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM app_users WHERE username = ?",
+            (username,),
+        ).fetchone()
+    if row is None or not verify_password(password, row["password_hash"]):
+        return None
+    return row
+
+
+def delete_expired_sessions(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        "DELETE FROM app_sessions WHERE expira_em <= ?",
+        (datetime.now().isoformat(timespec="seconds"),),
+    )
+
+
+def create_session(user_id: int, hours: int = 12) -> str:
+    token = secrets.token_urlsafe(32)
+    now = datetime.now()
+    with connect() as conn:
+        delete_expired_sessions(conn)
+        conn.execute(
+            """
+            INSERT INTO app_sessions (user_id, token_hash, criado_em, expira_em)
+            VALUES (?, ?, ?, ?)
+            """,
+            (
+                user_id,
+                token_hash(token),
+                now.isoformat(timespec="seconds"),
+                (now + timedelta(hours=hours)).isoformat(timespec="seconds"),
+            ),
+        )
+    return token
+
+
+def get_user_by_session(token: str | None) -> sqlite3.Row | None:
+    if not token:
+        return None
+    with connect() as conn:
+        delete_expired_sessions(conn)
+        return conn.execute(
+            """
+            SELECT u.id, u.username, u.perfil
+            FROM app_sessions s
+            JOIN app_users u ON u.id = s.user_id
+            WHERE s.token_hash = ? AND s.expira_em > ?
+            """,
+            (token_hash(token), datetime.now().isoformat(timespec="seconds")),
+        ).fetchone()
+
+
+def delete_session(token: str | None) -> None:
+    if not token:
+        return
+    with connect() as conn:
+        conn.execute("DELETE FROM app_sessions WHERE token_hash = ?", (token_hash(token),))
 
 
 def save_orcamento(
