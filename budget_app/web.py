@@ -647,7 +647,7 @@ def login_page(error: str = "") -> bytes:
 def farmaceutico_select(data: dict[str, list[str]] | None, field_error: str | None = None) -> str:
     selected = form_value(data, "farmaceutico_responsavel")
     options = [
-        f'<option value="" disabled{" selected" if not selected else ""}>Farmacêutico(a)</option>'
+        f'<option value=""{" selected" if not selected else ""}>Não informar</option>'
     ]
     found_selected = not selected
     for row in list_farmaceuticos():
@@ -661,10 +661,10 @@ def farmaceutico_select(data: dict[str, list[str]] | None, field_error: str | No
         options.append(f'<option value="{esc(selected)}" selected>{esc(selected)}</option>')
     css_class = "form-select invalid" if field_error == "farmaceutico_responsavel" else "form-select"
     return f"""
-        <select id="farmaceutico_responsavel" name="farmaceutico_responsavel" class="{css_class}" aria-label="Farmacêutico(a) responsável" required>
+        <select id="farmaceutico_responsavel" name="farmaceutico_responsavel" class="{css_class}" aria-label="Farmacêutico(a) responsável">
           {''.join(options)}
         </select>
-        {field_message(field_error, 'farmaceutico_responsavel', 'Informe o farmacêutico(a) responsável.')}
+        {field_message(field_error, 'farmaceutico_responsavel', 'Selecione um responsável cadastrado.')}
     """
 
 
@@ -1199,17 +1199,11 @@ class Handler(BaseHTTPRequestHandler):
             )
             if not orcamento.cliente_nome:
                 raise ValueError("Informe o nome do cliente.")
-            if not orcamento.farmaceutico_responsavel:
-                return self.respond(
-                    400,
-                    form_page(
-                        "Campo Farm. resp.: informe o farmacêutico(a) responsável.",
-                        data,
-                        "farmaceutico_responsavel",
-                    ),
-                )
             farmaceuticos_ativos = {row["nome"] for row in list_farmaceuticos()}
-            if orcamento.farmaceutico_responsavel not in farmaceuticos_ativos:
+            if (
+                orcamento.farmaceutico_responsavel
+                and orcamento.farmaceutico_responsavel not in farmaceuticos_ativos
+            ):
                 return self.respond(
                     400,
                     form_page(

@@ -405,7 +405,8 @@ def render_orcamento(orcamento: Orcamento, sequence: int | None = None) -> Path:
     replace_prefixed_paragraph(doc, "CPF:", format_cpf(orcamento.cpf), after_text="Dados Cliente")
     replace_prefixed_paragraph(doc, "Telefone:", format_cell_phone(orcamento.telefone), after_text="Dados Cliente")
     replace_prefixed_paragraph(doc, "E-mail:", orcamento.email or "", after_text="Dados Cliente")
-    insert_farmaceutico_responsavel(doc, orcamento.farmaceutico_responsavel)
+    if orcamento.farmaceutico_responsavel:
+        insert_farmaceutico_responsavel(doc, orcamento.farmaceutico_responsavel)
     replace_date_paragraph(doc, orcamento.localidade, date_for_document(orcamento.data_orcamento))
     fill_products_table(doc, orcamento.itens)
 
