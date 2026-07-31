@@ -613,7 +613,7 @@ def detail_page(orcamento_id: int) -> bytes:
     pdf_exists = bool(row["pdf_path"]) and Path(row["pdf_path"]).exists()
     if pdf_exists:
         pdf_controls = f"""
-    <a class="button secondary" href="/download/{orcamento_id}/pdf">Baixar PDF</a>
+    <a class="button secondary" href="/download/{orcamento_id}/pdf" target="_blank" rel="noopener">Abrir PDF</a>
     <form method="post" action="/orcamentos/{orcamento_id}/gerar-pdf">
       <button class="secondary" type="submit">Gerar PDF novamente</button>
     </form>
@@ -898,14 +898,15 @@ class Handler(BaseHTTPRequestHandler):
                     return self.respond(404, layout("Erro", f'<section class="error">{esc(pdf_status)}</section>'))
                 file_path = pdf_path
         content_type = mimetypes.guess_type(file_path.name)[0] or "application/octet-stream"
-        return self.send_file(file_path, content_type)
+        disposition = "inline" if kind == "pdf" else "attachment"
+        return self.send_file(file_path, content_type, disposition=disposition)
 
-    def send_file(self, path: Path, content_type: str) -> None:
+    def send_file(self, path: Path, content_type: str, disposition: str = "attachment") -> None:
         data = path.read_bytes()
         self.send_response(200)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(data)))
-        self.send_header("Content-Disposition", f'attachment; filename="{path.name}"')
+        self.send_header("Content-Disposition", f'{disposition}; filename="{path.name}"')
         self.end_headers()
         self.wfile.write(data)
 

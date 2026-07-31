@@ -1,12 +1,9 @@
 services:
   - type: web
     name: orcamento-clamed
-    runtime: python
+    runtime: docker
     plan: free
-    buildCommand: pip install -r requirements.txt
-    startCommand: python app.py
+    dockerfilePath: ./Dockerfile
     envVars:
       - key: HOST
         value: 0.0.0.0
-      - key: PYTHON_VERSION
-        value: 3.13.5

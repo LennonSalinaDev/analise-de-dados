@@ -478,16 +478,28 @@ def convert_to_pdf_with_libreoffice(docx_path: Path) -> tuple[Path | None, str]:
     if not soffice:
         return None, "LibreOffice/soffice não encontrado."
 
+    profile_dir = Path("tmp/libreoffice-profile").resolve()
+    profile_dir.mkdir(parents=True, exist_ok=True)
+    source_path = docx_path.resolve()
+    output_dir = docx_path.parent.resolve()
+    pdf_path = docx_path.with_suffix(".pdf")
+    temp_pdf_path = docx_path.with_suffix(".tmp.pdf")
+    pdf_path.unlink(missing_ok=True)
+    temp_pdf_path.unlink(missing_ok=True)
+
     try:
         result = subprocess.run(
             [
                 soffice,
                 "--headless",
+                "--nologo",
+                "--nofirststartwizard",
+                f"-env:UserInstallation=file:///{profile_dir.as_posix()}",
                 "--convert-to",
                 "pdf",
                 "--outdir",
-                str(docx_path.parent),
-                str(docx_path),
+                str(output_dir),
+                str(source_path),
             ],
             check=False,
             capture_output=True,
@@ -497,7 +509,6 @@ def convert_to_pdf_with_libreoffice(docx_path: Path) -> tuple[Path | None, str]:
     except Exception as exc:
         return None, f"LibreOffice não gerou o PDF: {exc}"
 
-    pdf_path = docx_path.with_suffix(".pdf")
     if result.returncode == 0 and pdf_path.exists():
         return pdf_path, "PDF gerado com sucesso pelo LibreOffice."
     detail = (result.stderr or result.stdout or "erro desconhecido").strip()

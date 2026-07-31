@@ -88,17 +88,18 @@ Se estiver usando o painel da Cloudflare Pages, remova o deploy command `npx wra
 
 ## Deploy gratuito no Render
 
-O arquivo `render.yaml` deixa o projeto pronto para um Web Service gratuito no Render.
+O arquivo `render.yaml` deixa o projeto pronto para um Web Service gratuito no Render usando Docker.
 
 Configuração esperada:
 
 ```text
-Build Command: pip install -r requirements.txt
-Start Command: python app.py
-Environment Variable: HOST=0.0.0.0
+Runtime/Language: Docker
+Dockerfile Path: ./Dockerfile
 ```
 
-No campo `Start Command` do painel do Render, digite somente:
+Se você estiver criando manualmente como Python, o DOCX funciona, mas o PDF não terá LibreOffice instalado por padrão. Para gerar PDF na nuvem, use Docker.
+
+Se você continuar no runtime Python nativo, no campo `Start Command` do painel do Render, digite somente:
 
 ```text
 python app.py
@@ -110,6 +111,6 @@ Não digite `Start Command: python app.py`. Se esse texto completo for colocado 
 bash: line 1: Start: command not found
 ```
 
-No Render, o DOCX deve funcionar. O PDF pelo Microsoft Word não funciona na nuvem, porque o ambiente é Linux e não tem Word instalado. Nesse caso, o sistema tentará LibreOffice/soffice se estiver disponível; se não estiver, o orçamento ainda será salvo com DOCX e o PDF ficará indisponível.
+No Render, o PDF pelo Microsoft Word não funciona, porque o ambiente é Linux e não tem Word instalado. Com o `Dockerfile` deste projeto, o LibreOffice Writer é instalado dentro da imagem e o sistema usa `soffice --headless` para converter DOCX em PDF.
 
 Atenção: o histórico atual usa SQLite em arquivo local. Em hospedagem gratuita, isso serve para teste/demonstração, mas pode ser perdido em redeploy/restart. Para uso real em nuvem, o próximo passo é trocar o histórico para PostgreSQL.
