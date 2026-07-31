@@ -49,6 +49,7 @@ class Item:
 @dataclass
 class Orcamento:
     cliente_nome: str
+    farmaceutico_responsavel: str
     cpf: str
     telefone: str
     email: str | None
@@ -76,6 +77,7 @@ def init_db() -> None:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 criado_em TEXT NOT NULL,
                 cliente_nome TEXT NOT NULL,
+                farmaceutico_responsavel TEXT NOT NULL DEFAULT '',
                 cpf TEXT NOT NULL,
                 telefone TEXT NOT NULL,
                 email TEXT,
@@ -89,6 +91,7 @@ def init_db() -> None:
             """
         )
         migrate_nullable_email(conn)
+        migrate_farmaceutico_responsavel(conn)
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS orcamento_itens (
@@ -148,6 +151,15 @@ def migrate_nullable_email(conn: sqlite3.Connection) -> None:
     conn.execute("DROP TABLE orcamentos_old")
 
 
+def migrate_farmaceutico_responsavel(conn: sqlite3.Connection) -> None:
+    columns = conn.execute("PRAGMA table_info(orcamentos)").fetchall()
+    if any(column["name"] == "farmaceutico_responsavel" for column in columns):
+        return
+    conn.execute(
+        "ALTER TABLE orcamentos ADD COLUMN farmaceutico_responsavel TEXT NOT NULL DEFAULT ''"
+    )
+
+
 def save_orcamento(
     orcamento: Orcamento,
     docx_path: Path,
@@ -158,14 +170,16 @@ def save_orcamento(
         cur = conn.execute(
             """
             INSERT INTO orcamentos (
-                criado_em, cliente_nome, cpf, telefone, email, data_orcamento,
-                localidade, total, docx_path, pdf_path, pdf_status
+                criado_em, cliente_nome, farmaceutico_responsavel, cpf, telefone,
+                email, data_orcamento, localidade, total, docx_path, pdf_path,
+                pdf_status
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 datetime.now().isoformat(timespec="seconds"),
                 orcamento.cliente_nome,
+                orcamento.farmaceutico_responsavel,
                 orcamento.cpf,
                 orcamento.telefone,
                 orcamento.email,
@@ -262,6 +276,7 @@ def iter_export_rows() -> Iterable[sqlite3.Row]:
                 o.id,
                 o.criado_em,
                 o.cliente_nome,
+                o.farmaceutico_responsavel,
                 o.cpf,
                 o.telefone,
                 o.email,

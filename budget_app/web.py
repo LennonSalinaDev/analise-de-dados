@@ -99,6 +99,7 @@ def row_to_orcamento(orcamento_id: int, row) -> Orcamento:
     ]
     return Orcamento(
         cliente_nome=row["cliente_nome"],
+        farmaceutico_responsavel=row["farmaceutico_responsavel"],
         cpf=row["cpf"],
         telefone=row["telefone"],
         email=row["email"],
@@ -307,18 +308,18 @@ def layout(title: str, content: str) -> bytes:
       color: var(--ink);
     }}
     button.danger, .button.danger {{
-      background: #b42318;
+      background: #d24a3f;
       color: #fff;
     }}
     button.danger:hover, .button.danger:hover {{
-      background: #8f1d14;
+      background: #bf382e;
     }}
     button.success, .button.success {{
-      background: #157347;
+      background: #2f9a60;
       color: #fff;
     }}
     button.success:hover, .button.success:hover {{
-      background: #0f5d39;
+      background: #258750;
     }}
     button.icon {{
       width: 34px;
@@ -328,10 +329,25 @@ def layout(title: str, content: str) -> bytes:
       color: #374151;
     }}
     .history td, .history th {{ font-size: 13px; }}
+    .recent-history th:nth-child(1), .recent-history td:nth-child(1) {{ width: 54px; }}
+    .recent-history th:nth-child(2), .recent-history td:nth-child(2) {{ width: auto; }}
+    .recent-history th:nth-child(3), .recent-history td:nth-child(3) {{ width: 170px; }}
+    .recent-history th:nth-child(4), .recent-history td:nth-child(4) {{ width: 94px; }}
+    .recent-history th:nth-child(5), .recent-history td:nth-child(5) {{ width: 106px; }}
+    .full-history th:nth-child(1), .full-history td:nth-child(1) {{ width: 54px; }}
+    .full-history th:nth-child(2), .full-history td:nth-child(2) {{ width: 126px; }}
+    .full-history th:nth-child(3), .full-history td:nth-child(3) {{ width: auto; }}
+    .full-history th:nth-child(4), .full-history td:nth-child(4) {{ width: 150px; }}
+    .full-history th:nth-child(5), .full-history td:nth-child(5) {{
+      width: 124px;
+      white-space: nowrap;
+    }}
+    .full-history th:nth-child(6), .full-history td:nth-child(6) {{ width: 94px; }}
+    .full-history th:nth-child(7), .full-history td:nth-child(7) {{ width: 106px; }}
     .history th:last-child,
     .history td:last-child {{
-      width: 118px;
-      max-width: 118px;
+      width: 128px;
+      max-width: 128px;
     }}
     .row-actions {{
       padding-left: 6px;
@@ -468,6 +484,7 @@ def form_page(
         <tr>
           <td>{row['id']}</td>
           <td>{esc(row['cliente_nome'])}</td>
+          <td>{esc(row['farmaceutico_responsavel'])}</td>
           <td>{esc(date_for_display(row['data_orcamento']))}</td>
           <td>R$ {esc(money(Decimal(row['total'])))}</td>
           <td class="row-actions">
@@ -483,7 +500,7 @@ def form_page(
         for row in histories
     )
     if not rows:
-        rows = '<tr><td colspan="5" class="muted">Nenhum orçamento salvo ainda.</td></tr>'
+        rows = '<tr><td colspan="6" class="muted">Nenhum orçamento salvo ainda.</td></tr>'
 
     content = f"""
 {error_html}
@@ -494,6 +511,10 @@ def form_page(
       <div class="span-2">
         <label for="cliente_nome">Cliente</label>
         <input id="cliente_nome" name="cliente_nome" value="{esc(form_value(data, 'cliente_nome'))}" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" required>
+      </div>
+      <div class="span-2">
+        <label for="farmaceutico_responsavel">Farmacêutico(a) responsável</label>
+        <input id="farmaceutico_responsavel" name="farmaceutico_responsavel" value="{esc(form_value(data, 'farmaceutico_responsavel'))}" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" required>
       </div>
       <div>
         <label for="cpf">CPF</label>
@@ -555,8 +576,8 @@ def form_page(
 <section>
   <h2>Últimos orçamentos</h2>
   <div class="table-wrap">
-    <table class="history">
-      <thead><tr><th>ID</th><th>Cliente</th><th>Data</th><th>Total</th><th></th></tr></thead>
+    <table class="history recent-history">
+      <thead><tr><th>ID</th><th>Cliente</th><th>Farm. resp.</th><th>Data</th><th>Total</th><th></th></tr></thead>
       <tbody>{rows}</tbody>
     </table>
   </div>
@@ -630,6 +651,7 @@ def detail_page(orcamento_id: int) -> bytes:
   <h2>Orçamento #{orcamento_id}</h2>
   <div class="grid">
     <div class="span-2"><label>Cliente</label><div>{esc(row['cliente_nome'])}</div></div>
+    <div class="span-2"><label>Farm. resp.</label><div>{esc(row['farmaceutico_responsavel'])}</div></div>
     <div><label>CPF</label><div>{esc(format_cpf(row['cpf']))}</div></div>
     <div><label>Telefone</label><div>{esc(format_cell_phone(row['telefone']))}</div></div>
     <div class="span-2"><label>E-mail</label><div>{esc(row['email'])}</div></div>
@@ -668,6 +690,7 @@ def history_page() -> bytes:
           <td>{row['id']}</td>
           <td>{esc(row['criado_em'])}</td>
           <td>{esc(row['cliente_nome'])}</td>
+          <td>{esc(row['farmaceutico_responsavel'])}</td>
           <td>{esc(format_cpf(row['cpf']))}</td>
           <td>{esc(date_for_display(row['data_orcamento']))}</td>
           <td>R$ {esc(money(Decimal(row['total'])))}</td>
@@ -684,14 +707,14 @@ def history_page() -> bytes:
         for row in list_orcamentos(100)
     )
     if not rows:
-        rows = '<tr><td colspan="7" class="muted">Nenhum orçamento salvo ainda.</td></tr>'
+        rows = '<tr><td colspan="8" class="muted">Nenhum orçamento salvo ainda.</td></tr>'
     content = f"""
 <section>
   <h2>Histórico</h2>
   <div class="table-wrap">
-    <table class="history">
+    <table class="history full-history">
       <thead>
-        <tr><th>ID</th><th>Criado em</th><th>Cliente</th><th>CPF</th><th>Data</th><th>Total</th><th></th></tr>
+        <tr><th>ID</th><th>Criado em</th><th>Cliente</th><th>Farm. resp.</th><th>CPF</th><th>Data</th><th>Total</th><th></th></tr>
       </thead>
       <tbody>{rows}</tbody>
     </table>
@@ -786,6 +809,7 @@ class Handler(BaseHTTPRequestHandler):
 
             orcamento = Orcamento(
                 cliente_nome=first(data, "cliente_nome"),
+                farmaceutico_responsavel=first(data, "farmaceutico_responsavel"),
                 cpf=cpf,
                 telefone=telefone,
                 email=first(data, "email") or None,
@@ -795,6 +819,8 @@ class Handler(BaseHTTPRequestHandler):
             )
             if not orcamento.cliente_nome:
                 raise ValueError("Informe o nome do cliente.")
+            if not orcamento.farmaceutico_responsavel:
+                raise ValueError("Informe o farmacêutico(a) responsável.")
             draft_path = render_orcamento(orcamento)
             pdf_path = None
             pdf_status = "PDF pendente: aguardando geração do arquivo final."

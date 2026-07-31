@@ -257,6 +257,19 @@ def replace_date_paragraph(doc: Document, localidade: str, data_orcamento: str) 
     raise ValueError("Campo de data não encontrado no template.")
 
 
+def insert_farmaceutico_responsavel(doc: Document, value: str) -> None:
+    for paragraph in doc.paragraphs:
+        if paragraph.text.strip().startswith("Campo Grande,"):
+            new_paragraph = paragraph.insert_paragraph_before()
+            if paragraph._p.pPr is not None:
+                new_paragraph._p.insert(0, deepcopy(paragraph._p.pPr))
+            set_paragraph_text(new_paragraph, f"Farm. Resp.: {value}")
+            if new_paragraph.runs:
+                new_paragraph.runs[0].font.size = Pt(10)
+            return
+    raise ValueError("Campo de data não encontrado para inserir o farmacêutico responsável.")
+
+
 def first_cell_run_properties(cell):
     for paragraph in cell.paragraphs:
         for run in paragraph.runs:
@@ -392,6 +405,7 @@ def render_orcamento(orcamento: Orcamento, sequence: int | None = None) -> Path:
     replace_prefixed_paragraph(doc, "CPF:", format_cpf(orcamento.cpf), after_text="Dados Cliente")
     replace_prefixed_paragraph(doc, "Telefone:", format_cell_phone(orcamento.telefone), after_text="Dados Cliente")
     replace_prefixed_paragraph(doc, "E-mail:", orcamento.email or "", after_text="Dados Cliente")
+    insert_farmaceutico_responsavel(doc, orcamento.farmaceutico_responsavel)
     replace_date_paragraph(doc, orcamento.localidade, date_for_document(orcamento.data_orcamento))
     fill_products_table(doc, orcamento.itens)
 
@@ -536,6 +550,7 @@ def export_history_csv() -> Path:
                 "orcamento_id",
                 "criado_em",
                 "cliente_nome",
+                "farmaceutico_responsavel",
                 "cpf",
                 "telefone",
                 "email",
