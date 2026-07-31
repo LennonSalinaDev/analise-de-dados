@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import os
 import shutil
 import subprocess
 from copy import deepcopy
@@ -401,10 +402,81 @@ def render_orcamento(orcamento: Orcamento, sequence: int | None = None) -> Path:
     return path
 
 
-def convert_to_pdf(docx_path: Path) -> tuple[Path | None, str]:
+def powershell_quote(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
+
+
+def convert_to_pdf_with_word(docx_path: Path) -> tuple[Path | None, str]:
+    if os.name != "nt":
+        return None, "Microsoft Word disponível apenas no Windows."
+
+    powershell = shutil.which("powershell") or shutil.which("pwsh")
+    if not powershell:
+        return None, "PowerShell não encontrado para acionar o Microsoft Word."
+
+    source_path = docx_path.resolve()
+    pdf_path = docx_path.with_suffix(".pdf")
+    target_path = pdf_path.resolve()
+    temp_path = target_path.with_name(f"{target_path.stem}.tmp.pdf")
+    temp_path.unlink(missing_ok=True)
+
+    script = f"""
+$ErrorActionPreference = 'Stop'
+$docxPath = {powershell_quote(str(source_path))}
+$pdfPath = {powershell_quote(str(temp_path))}
+if (-not (Test-Path -LiteralPath $docxPath)) {{
+  throw "DOCX não encontrado: $docxPath"
+}}
+if (Test-Path -LiteralPath $pdfPath) {{
+  Remove-Item -LiteralPath $pdfPath -Force
+}}
+$word = $null
+$doc = $null
+try {{
+  $word = New-Object -ComObject Word.Application
+  $word.Visible = $false
+  $word.DisplayAlerts = 0
+  $doc = $word.Documents.Open($docxPath, $false, $true)
+  $doc.SaveAs([ref] $pdfPath, [ref] 17)
+}} finally {{
+  if ($doc -ne $null) {{
+    $doc.Close([ref] $false) | Out-Null
+  }}
+  if ($word -ne $null) {{
+    $word.Quit() | Out-Null
+  }}
+  [System.GC]::Collect()
+  [System.GC]::WaitForPendingFinalizers()
+}}
+"""
+    result = subprocess.run(
+        [
+            powershell,
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            script,
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    if result.returncode == 0 and temp_path.exists():
+        temp_path.replace(target_path)
+        return pdf_path, "PDF gerado com sucesso pelo Microsoft Word."
+
+    temp_path.unlink(missing_ok=True)
+    detail = (result.stderr or result.stdout or "erro desconhecido").strip()
+    return None, f"Microsoft Word não gerou o PDF: {detail}"
+
+
+def convert_to_pdf_with_libreoffice(docx_path: Path) -> tuple[Path | None, str]:
     soffice = shutil.which("soffice") or shutil.which("libreoffice")
     if not soffice:
-        return None, "PDF não gerado: LibreOffice/soffice não encontrado."
+        return None, "LibreOffice/soffice não encontrado."
 
     try:
         result = subprocess.run(
@@ -423,13 +495,24 @@ def convert_to_pdf(docx_path: Path) -> tuple[Path | None, str]:
             timeout=60,
         )
     except Exception as exc:
-        return None, f"PDF não gerado: {exc}"
+        return None, f"LibreOffice não gerou o PDF: {exc}"
 
     pdf_path = docx_path.with_suffix(".pdf")
     if result.returncode == 0 and pdf_path.exists():
-        return pdf_path, "PDF gerado com sucesso."
+        return pdf_path, "PDF gerado com sucesso pelo LibreOffice."
     detail = (result.stderr or result.stdout or "erro desconhecido").strip()
-    return None, f"PDF não gerado: {detail}"
+    return None, f"LibreOffice não gerou o PDF: {detail}"
+
+
+def convert_to_pdf(docx_path: Path) -> tuple[Path | None, str]:
+    attempts = [convert_to_pdf_with_word, convert_to_pdf_with_libreoffice]
+    errors = []
+    for converter in attempts:
+        pdf_path, status = converter(docx_path)
+        if pdf_path is not None:
+            return pdf_path, status
+        errors.append(status)
+    return None, "PDF não gerado: " + " | ".join(errors)
 
 
 def export_history_csv() -> Path:

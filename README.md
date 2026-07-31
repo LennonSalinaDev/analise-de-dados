@@ -62,4 +62,26 @@ Essa página confere se o modelo ainda tem os campos necessários para gerar nov
 
 ## Observação sobre PDF
 
-O DOCX é sempre gerado. O PDF será gerado automaticamente quando houver LibreOffice/soffice instalado e acessível no `PATH`. Se não houver, o sistema registra o orçamento normalmente e mostra o PDF como indisponível.
+O DOCX é sempre gerado. No Windows, o sistema tenta gerar o PDF usando o Microsoft Word instalado na máquina. Se o Word não estiver disponível, ele tenta usar LibreOffice/soffice quando estiver instalado e acessível no `PATH`.
+
+Na tela de detalhes do orçamento existe a opção `Gerar PDF`, útil para criar o PDF de orçamentos antigos ou tentar novamente quando a conversão automática não tiver sido concluída.
+
+## Cloudflare / cloudflared
+
+Este sistema não deve ser publicado como Cloudflare Pages/Workers com `npx wrangler deploy`, porque ele não é um site estático. Ele é um servidor Python que usa SQLite, gera arquivos DOCX/PDF e pode acionar o Microsoft Word local para PDF.
+
+O erro abaixo indica justamente isso:
+
+```text
+Could not detect a directory containing static files (e.g. html, css and js) for the project
+```
+
+Para acessar pela internet via Cloudflare, rode o sistema localmente e exponha com Cloudflare Tunnel:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\start_cloudflare_tunnel.ps1
+```
+
+Depois use a URL `https://...trycloudflare.com` exibida pelo `cloudflared`.
+
+Se estiver usando o painel da Cloudflare Pages, remova o deploy command `npx wrangler deploy`. Para este projeto, Cloudflare Pages não é o ambiente correto enquanto o sistema depender de Python, SQLite local e geração de PDF pelo Word.

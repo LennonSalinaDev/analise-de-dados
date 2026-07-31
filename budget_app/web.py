@@ -25,6 +25,7 @@ from .generator import (
 from .storage import (
     Item,
     Orcamento,
+    connect,
     delete_orcamento,
     get_itens,
     get_orcamento,
@@ -535,11 +536,21 @@ def detail_page(orcamento_id: int) -> bytes:
         """
         for item in itens
     )
-    pdf_link = (
-        f'<a class="button secondary" href="/download/{orcamento_id}/pdf">Baixar PDF</a>'
-        if row["pdf_path"]
-        else f'<span class="warn">{esc(row["pdf_status"])}</span>'
-    )
+    pdf_exists = bool(row["pdf_path"]) and Path(row["pdf_path"]).exists()
+    if pdf_exists:
+        pdf_controls = f"""
+    <a class="button secondary" href="/download/{orcamento_id}/pdf">Baixar PDF</a>
+    <form method="post" action="/orcamentos/{orcamento_id}/gerar-pdf">
+      <button class="secondary" type="submit">Gerar PDF novamente</button>
+    </form>
+        """
+    else:
+        pdf_controls = f"""
+    <span class="warn">{esc(row["pdf_status"])}</span>
+    <form method="post" action="/orcamentos/{orcamento_id}/gerar-pdf">
+      <button class="secondary" type="submit">Gerar PDF</button>
+    </form>
+        """
     content = f"""
 <section>
   <h2>Orçamento #{orcamento_id}</h2>
@@ -566,7 +577,7 @@ def detail_page(orcamento_id: int) -> bytes:
 <section>
   <div class="actions">
     <a class="button primary" href="/download/{orcamento_id}/docx">Baixar DOCX</a>
-    {pdf_link}
+    {pdf_controls}
     <form method="post" action="/orcamentos/{orcamento_id}/excluir" onsubmit="return confirm('Excluir este orçamento e seus arquivos gerados?');">
       <button class="danger" type="submit">Excluir orçamento</button>
     </form>
@@ -680,6 +691,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         path = urlparse(self.path).path
+        if path.startswith("/orcamentos/") and path.endswith("/gerar-pdf"):
+            return self.handle_generate_pdf(path)
         if path.startswith("/orcamentos/") and path.endswith("/excluir"):
             return self.handle_delete(path)
         if path != "/orcamentos":
@@ -709,14 +722,13 @@ class Handler(BaseHTTPRequestHandler):
             if not orcamento.cliente_nome:
                 raise ValueError("Informe o nome do cliente.")
             draft_path = render_orcamento(orcamento)
-            pdf_path, pdf_status = convert_to_pdf(draft_path)
+            pdf_path = None
+            pdf_status = "PDF pendente: aguardando geração do arquivo final."
             orcamento_id = save_orcamento(orcamento, draft_path, pdf_path, pdf_status)
             final_docx = render_orcamento(orcamento, sequence=orcamento_id)
             if final_docx != draft_path:
                 draft_path.unlink(missing_ok=True)
             pdf_path, pdf_status = convert_to_pdf(final_docx)
-            from .storage import connect
-
             with connect() as conn:
                 conn.execute(
                     "UPDATE orcamentos SET docx_path = ?, pdf_path = ?, pdf_status = ? WHERE id = ?",
@@ -725,6 +737,39 @@ class Handler(BaseHTTPRequestHandler):
             return self.redirect(f"/orcamentos/{orcamento_id}")
         except Exception as exc:
             return self.respond(400, form_page(str(exc), data))
+
+    def handle_generate_pdf(self, path: str) -> None:
+        parts = path.strip("/").split("/")
+        if len(parts) != 3:
+            return self.respond(404, layout("Erro", '<section class="error">Geração de PDF inválida.</section>'))
+        _, id_raw, action = parts
+        if action != "gerar-pdf":
+            return self.respond(404, layout("Erro", '<section class="error">Geração de PDF inválida.</section>'))
+        try:
+            orcamento_id = int(id_raw)
+        except ValueError:
+            return self.respond(404, layout("Erro", '<section class="error">Orçamento inválido.</section>'))
+
+        row = get_orcamento(orcamento_id)
+        if row is None:
+            return self.respond(404, layout("Erro", '<section class="error">Orçamento não encontrado.</section>'))
+
+        docx_path = Path(row["docx_path"])
+        if not docx_path.exists():
+            with connect() as conn:
+                conn.execute(
+                    "UPDATE orcamentos SET pdf_path = NULL, pdf_status = ? WHERE id = ?",
+                    ("PDF não gerado: arquivo DOCX indisponível.", orcamento_id),
+                )
+            return self.redirect(f"/orcamentos/{orcamento_id}")
+
+        pdf_path, pdf_status = convert_to_pdf(docx_path)
+        with connect() as conn:
+            conn.execute(
+                "UPDATE orcamentos SET pdf_path = ?, pdf_status = ? WHERE id = ?",
+                (str(pdf_path) if pdf_path else None, pdf_status, orcamento_id),
+            )
+        return self.redirect(f"/orcamentos/{orcamento_id}")
 
     def handle_delete(self, path: str) -> None:
         parts = path.strip("/").split("/")
