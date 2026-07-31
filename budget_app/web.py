@@ -178,6 +178,8 @@ def layout(title: str, content: str, *, show_nav: bool = True) -> bytes:
     nav_html = ""
     if show_nav:
         nav_html = """
+    <input class="nav-toggle" id="nav-toggle" type="checkbox" aria-label="Abrir menu">
+    <label class="nav-toggle-button" for="nav-toggle">Menu</label>
     <nav>
       <a href="/">Novo orçamento</a>
       <a href="/historico">Histórico</a>
@@ -254,6 +256,10 @@ def layout(title: str, content: str, *, show_nav: bool = True) -> bytes:
       align-items: center;
       justify-content: flex-end;
       gap: 6px;
+    }}
+    .nav-toggle,
+    .nav-toggle-button {{
+      display: none;
     }}
     nav form {{
       margin: 0;
@@ -539,14 +545,150 @@ def layout(title: str, content: str, *, show_nav: bool = True) -> bytes:
       nav {{ justify-content: flex-start; }}
     }}
     @media (max-width: 860px) {{
+      header {{
+        padding: 12px 16px;
+        gap: 10px;
+      }}
       .brand {{ align-items: flex-start; flex-direction: column; gap: 8px; }}
       .brand-logo {{ width: 138px; }}
       header h1 {{ white-space: normal; }}
-      nav a {{ margin-left: 0; margin-right: 6px; }}
+      .nav-toggle-button {{
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 38px;
+        width: 100%;
+        border: 1px solid var(--line-strong);
+        border-radius: 6px;
+        background: #eef3f0;
+        color: #2e4f3d;
+        font-weight: 800;
+        cursor: pointer;
+      }}
+      nav {{
+        display: none;
+        width: 100%;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 8px;
+        padding-top: 2px;
+      }}
+      .nav-toggle:checked + .nav-toggle-button + nav {{
+        display: flex;
+      }}
+      nav a,
+      nav form,
+      .nav-logout {{
+        width: 100%;
+      }}
+      nav a {{
+        margin: 0;
+        padding: 10px 12px;
+        background: #fafcfb;
+        border: 1px solid var(--line);
+      }}
+      .nav-logout {{
+        justify-content: center;
+        height: 38px;
+      }}
+      main {{
+        width: min(1120px, calc(100vw - 24px));
+        margin-top: 16px;
+      }}
+      section {{
+        padding: 16px;
+      }}
       .grid {{ grid-template-columns: 1fr; }}
       .span-2, .span-4 {{ grid-column: span 1; }}
-      table {{ min-width: 850px; }}
+      #produtos,
+      #produtos thead,
+      #produtos tbody,
+      #produtos tr,
+      #produtos td,
+      .history.recent-history,
+      .history.recent-history thead,
+      .history.recent-history tbody,
+      .history.recent-history tr,
+      .history.recent-history td {{
+        display: block;
+        width: 100%;
+      }}
+      #produtos,
+      .history.recent-history {{
+        min-width: 0;
+      }}
+      #produtos thead,
+      .history.recent-history thead {{
+        display: none;
+      }}
+      #produtos tr,
+      .history.recent-history tr {{
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 10px;
+        margin-bottom: 12px;
+        background: #fff;
+      }}
+      #produtos td,
+      .history.recent-history td {{
+        border-bottom: 0;
+        padding: 7px 0;
+      }}
+      #produtos td::before,
+      .history.recent-history td::before {{
+        display: block;
+        margin-bottom: 5px;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 800;
+      }}
+      #produtos td:nth-child(1)::before {{ content: "Código"; }}
+      #produtos td:nth-child(2)::before {{ content: "Produto"; }}
+      #produtos td:nth-child(3)::before {{ content: "PMC"; }}
+      #produtos td:nth-child(4)::before {{ content: "Desc. %"; }}
+      #produtos td:nth-child(5)::before {{ content: "Valor un."; }}
+      #produtos td:nth-child(6)::before {{ content: "Qtd"; }}
+      #produtos td:nth-child(7)::before,
+      .history.recent-history td:nth-child(6)::before {{
+        content: "";
+        display: none;
+      }}
+      #produtos td:last-child {{
+        display: flex;
+        justify-content: flex-end;
+      }}
+      .history.recent-history td:nth-child(1)::before {{ content: "ID"; }}
+      .history.recent-history td:nth-child(2)::before {{ content: "Cliente"; }}
+      .history.recent-history td:nth-child(3)::before {{ content: "Farm. resp."; }}
+      .history.recent-history td:nth-child(4)::before {{ content: "Data"; }}
+      .history.recent-history td:nth-child(5)::before {{ content: "Total"; }}
+      .history.recent-history td:last-child {{
+        max-width: none;
+        width: 100%;
+        padding-top: 10px;
+      }}
+      .history.recent-history td.muted::before {{
+        display: none;
+      }}
+      .history.recent-history .action-group {{
+        justify-content: stretch;
+      }}
+      .history.recent-history .action-group a,
+      .history.recent-history .action-group button {{
+        flex: 1 1 0;
+      }}
       .table-wrap {{ overflow-x: auto; }}
+      .final-actions {{
+        align-items: stretch;
+        gap: 12px;
+      }}
+      .responsavel-select {{
+        flex: 1 1 100%;
+        max-width: none;
+      }}
+      .final-actions .primary {{
+        width: 100%;
+      }}
       .manager-row,
       .manager-row.compact,
       .manager-row.create-row {{ grid-template-columns: 1fr; }}
