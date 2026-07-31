@@ -85,3 +85,19 @@ powershell -ExecutionPolicy Bypass -File scripts\start_cloudflare_tunnel.ps1
 Depois use a URL `https://...trycloudflare.com` exibida pelo `cloudflared`.
 
 Se estiver usando o painel da Cloudflare Pages, remova o deploy command `npx wrangler deploy`. Para este projeto, Cloudflare Pages não é o ambiente correto enquanto o sistema depender de Python, SQLite local e geração de PDF pelo Word.
+
+## Deploy gratuito no Render
+
+O arquivo `render.yaml` deixa o projeto pronto para um Web Service gratuito no Render.
+
+Configuração esperada:
+
+```text
+Build Command: pip install -r requirements.txt
+Start Command: python app.py
+Environment Variable: HOST=0.0.0.0
+```
+
+No Render, o DOCX deve funcionar. O PDF pelo Microsoft Word não funciona na nuvem, porque o ambiente é Linux e não tem Word instalado. Nesse caso, o sistema tentará LibreOffice/soffice se estiver disponível; se não estiver, o orçamento ainda será salvo com DOCX e o PDF ficará indisponível.
+
+Atenção: o histórico atual usa SQLite em arquivo local. Em hospedagem gratuita, isso serve para teste/demonstração, mas pode ser perdido em redeploy/restart. Para uso real em nuvem, o próximo passo é trocar o histórico para PostgreSQL.

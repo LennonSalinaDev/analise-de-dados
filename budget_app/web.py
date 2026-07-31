@@ -35,7 +35,7 @@ from .storage import (
 )
 
 
-HOST = "127.0.0.1"
+HOST = os.environ.get("HOST", "127.0.0.1")
 PORT = 8000
 
 
