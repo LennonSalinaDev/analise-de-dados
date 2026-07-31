@@ -98,6 +98,18 @@ Start Command: python app.py
 Environment Variable: HOST=0.0.0.0
 ```
 
+No campo `Start Command` do painel do Render, digite somente:
+
+```text
+python app.py
+```
+
+Não digite `Start Command: python app.py`. Se esse texto completo for colocado no campo, o Render tenta executar um comando chamado `Start` e mostra este erro:
+
+```text
+bash: line 1: Start: command not found
+```
+
 No Render, o DOCX deve funcionar. O PDF pelo Microsoft Word não funciona na nuvem, porque o ambiente é Linux e não tem Word instalado. Nesse caso, o sistema tentará LibreOffice/soffice se estiver disponível; se não estiver, o orçamento ainda será salvo com DOCX e o PDF ficará indisponível.
 
 Atenção: o histórico atual usa SQLite em arquivo local. Em hospedagem gratuita, isso serve para teste/demonstração, mas pode ser perdido em redeploy/restart. Para uso real em nuvem, o próximo passo é trocar o histórico para PostgreSQL.
