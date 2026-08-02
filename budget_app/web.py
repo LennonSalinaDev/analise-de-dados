@@ -227,11 +227,19 @@ def layout(title: str, content: str, *, show_nav: bool = True) -> bytes:
       --warn: #8a5a00;
     }}
     * {{ box-sizing: border-box; }}
+    html {{
+      width: 100%;
+      min-height: 100%;
+      overflow-x: hidden;
+    }}
     body {{
+      width: 100%;
+      min-height: 100vh;
       margin: 0;
       font-family: "Segoe UI", Arial, Helvetica, sans-serif;
       background: var(--bg);
       color: var(--ink);
+      overflow-x: hidden;
     }}
     header {{
       background: #ffffff;
@@ -303,7 +311,7 @@ def layout(title: str, content: str, *, show_nav: bool = True) -> bytes:
       background: #e1ebe5;
     }}
     main {{
-      width: min(1120px, calc(100vw - 32px));
+      width: min(1280px, calc(100% - 32px));
       margin: 24px auto 48px;
     }}
     section {{
@@ -585,11 +593,45 @@ def layout(title: str, content: str, *, show_nav: bool = True) -> bytes:
       to {{ transform: rotate(360deg); }}
     }}
     .calendar-picker {{
-      margin-top: 16px;
+      margin-top: 0;
     }}
     .switch-group {{
       display: grid;
       gap: 10px;
+    }}
+    .temperature-layout {{
+      display: grid;
+      grid-template-columns: minmax(220px, .9fr) minmax(180px, .7fr) minmax(300px, 1.4fr);
+      gap: 22px;
+      align-items: start;
+    }}
+    .temperature-models {{
+      padding-right: 18px;
+      border-right: 1px solid var(--line);
+    }}
+    .temperature-side {{
+      min-width: 0;
+    }}
+    .temperature-fields {{
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 14px;
+      align-items: end;
+    }}
+    .temperature-calendar {{
+      min-width: 0;
+      display: flex;
+      justify-content: flex-end;
+    }}
+    .temperature-calendar .calendar-picker {{
+      width: min(460px, 100%);
+    }}
+    .temperature-submit {{
+      justify-content: flex-start;
+      margin-top: 18px;
+    }}
+    .temperature-submit .primary {{
+      width: 100%;
     }}
     .form-switch {{
       display: flex;
@@ -638,20 +680,42 @@ def layout(title: str, content: str, *, show_nav: bool = True) -> bytes:
       outline: 2px solid rgba(7, 143, 71, .16);
       outline-offset: 2px;
     }}
-    .calendar-toggle {{
-      justify-content: flex-start;
-      margin-bottom: 0;
-    }}
-    .calendar-collapse {{
-      max-height: 0;
+    .selected-days {{
+      margin-top: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
       overflow: hidden;
-      opacity: 0;
-      transition: max-height .24s ease, opacity .18s ease, margin-top .18s ease;
+      background: #fff;
     }}
-    .calendar-collapse.open {{
-      max-height: 560px;
-      opacity: 1;
-      margin-top: 10px;
+    .selected-days-title {{
+      padding: 8px 10px;
+      background: #fafcfb;
+      border-bottom: 1px solid var(--line);
+      color: #22382d;
+      font-size: 12px;
+      font-weight: 800;
+    }}
+    .selected-days-list {{
+      display: grid;
+      gap: 0;
+    }}
+    .selected-days-row {{
+      display: grid;
+      grid-template-columns: 42px 1fr;
+      gap: 10px;
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--line);
+      font-size: 13px;
+      font-weight: 700;
+    }}
+    .selected-days-row:last-child {{
+      border-bottom: 0;
+    }}
+    .selected-days-empty {{
+      padding: 10px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
     }}
     .calendar-shell {{
       max-width: 460px;
@@ -845,7 +909,7 @@ def layout(title: str, content: str, *, show_nav: bool = True) -> bytes:
         height: 38px;
       }}
       main {{
-        width: min(1120px, calc(100vw - 24px));
+        width: min(1280px, calc(100% - 24px));
         margin-top: 16px;
       }}
       section {{
@@ -971,6 +1035,22 @@ def layout(title: str, content: str, *, show_nav: bool = True) -> bytes:
       .final-actions .primary {{
         width: 100%;
       }}
+      .temperature-layout {{
+        grid-template-columns: 1fr;
+        gap: 16px;
+      }}
+      .temperature-models {{
+        padding-right: 0;
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+        padding-bottom: 14px;
+      }}
+      .temperature-fields {{
+        grid-template-columns: 1fr;
+      }}
+      .temperature-submit .primary {{
+        width: 100%;
+      }}
       .calendar-title {{
         font-size: 18px;
       }}
@@ -986,9 +1066,6 @@ def layout(title: str, content: str, *, show_nav: bool = True) -> bytes:
         font-size: 12px;
         padding: 5px;
       }}
-      .calendar-collapse.open {{
-        max-height: 520px;
-      }}
       .manager-row,
       .manager-row.compact,
       .manager-row.create-row {{ grid-template-columns: 1fr; }}
@@ -999,7 +1076,7 @@ def layout(title: str, content: str, *, show_nav: bool = True) -> bytes:
   <header>
     <div class="brand">
       <img class="brand-logo" src="/assets/{LOGO_FILENAME}" alt="Preço Popular">
-      <h1>Gerador de Orçamentos CLAMED</h1>
+      <h1>Automações CLAMED</h1>
     </div>
     {nav_html}
   </header>
@@ -1507,10 +1584,60 @@ def map_type_switches(data: dict[str, list[str]] | None = None) -> str:
             """
         )
     return f"""
-      <div class="span-4">
+      <div class="temperature-models">
         <label>Modelos</label>
         <div class="switch-group">
           {''.join(switches)}
+        </div>
+        <div class="actions temperature-submit">
+          <button class="primary" type="submit">Gerar mapa</button>
+        </div>
+      </div>
+    """
+
+
+def selected_days_panel(data: dict[str, list[str]] | None = None) -> str:
+    selected = sorted(
+        int(value)
+        for value in form_list(data, "dias_extras", [])
+        if value.isdigit()
+    )
+    try:
+        current_month = int(form_value(data, "mes", str(int(today_iso()[5:7]))) or today_iso()[5:7])
+        current_year = int(form_value(data, "ano", today_iso()[:4]) or today_iso()[:4])
+        days_in_month = monthrange(current_year, current_month)[1]
+    except Exception:
+        current_month = int(today_iso()[5:7])
+        current_year = int(today_iso()[:4])
+        days_in_month = 31
+    weekday_names = [
+        "segunda-feira",
+        "terça-feira",
+        "quarta-feira",
+        "quinta-feira",
+        "sexta-feira",
+        "sábado",
+        "domingo",
+    ]
+    rows = []
+    for day in selected:
+        if 1 <= day <= days_in_month:
+            weekday = weekday_names[date(current_year, current_month, day).weekday()]
+            rows.append(
+                f"""
+          <div class="selected-days-row">
+            <span>{day:02d}</span>
+            <span>{esc(weekday)}</span>
+          </div>
+                """
+            )
+    if not rows:
+        rows.append('<div class="selected-days-empty">Nenhum dia selecionado.</div>')
+    return f"""
+      <div class="selected-days">
+        <div class="selected-days-title">Dias selecionados</div>
+        <div class="selected-days-list" id="selected-days-list">
+          {''.join(rows)}
         </div>
       </div>
     """
@@ -1560,32 +1687,25 @@ def extra_days_calendar(data: dict[str, list[str]] | None = None) -> str:
         days_html.append('<div class="day-check blank"><span></span></div>')
     month_label = MONTH_OPTIONS[current_month - 1][1].lower() if 1 <= current_month <= 12 else ""
     return f"""
-      <div class="calendar-picker span-4">
-        <div class="actions calendar-toggle">
-          <button class="secondary" id="calendar-toggle-button" type="button" aria-expanded="false" aria-controls="extra-days-calendar">
-            Selecionar dias
-          </button>
+      <div class="calendar-picker">
+        <div class="calendar-shell" id="extra-days-calendar">
+          <div class="calendar-title" id="calendar-title">{esc(month_label)} {current_year}</div>
+          <div class="calendar-weekdays">
+            <span>domingo</span>
+            <span>segunda-feira</span>
+            <span>terça-feira</span>
+            <span>quarta-feira</span>
+            <span>quinta-feira</span>
+            <span>sexta-feira</span>
+            <span>sábado</span>
+          </div>
+          <div class="calendar-grid" id="calendar-grid">
+            {''.join(days_html)}
+          </div>
         </div>
-        <div class="calendar-collapse" id="extra-days-calendar" hidden>
-          <div class="calendar-shell">
-            <div class="calendar-title" id="calendar-title">{esc(month_label)} {current_year}</div>
-            <div class="calendar-weekdays">
-              <span>domingo</span>
-              <span>segunda-feira</span>
-              <span>terça-feira</span>
-              <span>quarta-feira</span>
-              <span>quinta-feira</span>
-              <span>sexta-feira</span>
-              <span>sábado</span>
-            </div>
-            <div class="calendar-grid" id="calendar-grid">
-              {''.join(days_html)}
-            </div>
-          </div>
-          <div class="calendar-legend">
-            <span>Domingos já são marcados automaticamente.</span>
-            <span>Dias selecionados também recebem ****.</span>
-          </div>
+        <div class="calendar-legend">
+          <span>Domingos já são marcados automaticamente.</span>
+          <span>Dias selecionados também recebem ****.</span>
         </div>
       </div>
       <script>
@@ -1594,8 +1714,7 @@ def extra_days_calendar(data: dict[str, list[str]] | None = None) -> str:
         const year = document.getElementById("ano");
         const grid = document.getElementById("calendar-grid");
         const title = document.getElementById("calendar-title");
-        const toggle = document.getElementById("calendar-toggle-button");
-        const panel = document.getElementById("extra-days-calendar");
+        const selectedList = document.getElementById("selected-days-list");
         const selectedDays = new Set(
           Array.from(document.querySelectorAll('input[name="dias_extras"]:checked')).map((input) => input.value)
         );
@@ -1622,6 +1741,7 @@ def extra_days_calendar(data: dict[str, list[str]] | None = None) -> str:
           input.addEventListener("change", () => {{
             if (input.checked) selectedDays.add(input.value);
             else selectedDays.delete(input.value);
+            renderSelectedDays();
           }});
           const span = document.createElement("span");
           span.textContent = String(day);
@@ -1634,6 +1754,42 @@ def extra_days_calendar(data: dict[str, list[str]] | None = None) -> str:
           cell.className = "day-check blank";
           cell.innerHTML = "<span></span>";
           return cell;
+        }}
+        function renderSelectedDays() {{
+          if (!selectedList) return;
+          const mes = Number(month.value);
+          const ano = Number(year.value);
+          selectedList.replaceChildren();
+          if (!mes || !ano) {{
+            const empty = document.createElement("div");
+            empty.className = "selected-days-empty";
+            empty.textContent = "Nenhum dia selecionado.";
+            selectedList.appendChild(empty);
+            return;
+          }}
+          const daysInMonth = new Date(ano, mes, 0).getDate();
+          const orderedDays = Array.from(selectedDays)
+            .map((value) => Number(value))
+            .filter((day) => day >= 1 && day <= daysInMonth)
+            .sort((left, right) => left - right);
+          if (orderedDays.length === 0) {{
+            const empty = document.createElement("div");
+            empty.className = "selected-days-empty";
+            empty.textContent = "Nenhum dia selecionado.";
+            selectedList.appendChild(empty);
+            return;
+          }}
+          for (const day of orderedDays) {{
+            const row = document.createElement("div");
+            row.className = "selected-days-row";
+            const daySpan = document.createElement("span");
+            daySpan.textContent = String(day).padStart(2, "0");
+            const weekdaySpan = document.createElement("span");
+            weekdaySpan.textContent = weekdayNames[new Date(ano, mes - 1, day).getDay()];
+            row.appendChild(daySpan);
+            row.appendChild(weekdaySpan);
+            selectedList.appendChild(row);
+          }}
         }}
         function updateCalendar() {{
           const mes = Number(month.value);
@@ -1652,23 +1808,11 @@ def extra_days_calendar(data: dict[str, list[str]] | None = None) -> str:
             grid.appendChild(dayCell(day, weekday));
           }}
           while (grid.children.length % 7 !== 0) grid.appendChild(blankCell());
+          renderSelectedDays();
         }}
-        toggle.addEventListener("click", () => {{
-          const shouldOpen = !panel.classList.contains("open");
-          if (shouldOpen) {{
-            panel.hidden = false;
-            requestAnimationFrame(() => panel.classList.add("open"));
-            updateCalendar();
-          }} else {{
-            panel.classList.remove("open");
-            setTimeout(() => {{
-              if (!panel.classList.contains("open")) panel.hidden = true;
-            }}, 240);
-          }}
-          toggle.setAttribute("aria-expanded", String(shouldOpen));
-        }});
         month.addEventListener("change", updateCalendar);
         year.addEventListener("input", updateCalendar);
+        updateCalendar();
       }})();
       </script>
     """
@@ -1690,26 +1834,30 @@ def temperature_map_form_page(
 <form method="post" action="/mapa-temperatura" autocomplete="off">
   <section>
     <h2>Mapa de temperatura</h2>
-    <div class="grid">
+    <div class="temperature-layout">
       {map_type_switches(data)}
-      <div>
-        <label for="mes">Mês</label>
-        <select id="mes" name="mes" autocomplete="off"{field_class(field_error, 'mes')}>
-          {month_select(data)}
-        </select>
+      <div class="temperature-side">
+        <div class="temperature-fields">
+          <div>
+            <label for="mes">Mês</label>
+            <select id="mes" name="mes" autocomplete="off"{field_class(field_error, 'mes')}>
+              {month_select(data)}
+            </select>
+          </div>
+          <div>
+            <label for="ano">Ano</label>
+            <input id="ano" name="ano" value="{esc(form_value(data, 'ano', current_year))}" inputmode="numeric" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"{field_class(field_error, 'ano')} required>
+          </div>
+          <div>
+            <label for="filial">Filial</label>
+            <input id="filial" name="filial" value="{esc(form_value(data, 'filial', '386'))}" inputmode="numeric" placeholder="000" maxlength="3" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"{field_class(field_error, 'filial')} required>
+          </div>
+        </div>
+        {selected_days_panel(data)}
       </div>
-      <div>
-        <label for="ano">Ano</label>
-        <input id="ano" name="ano" value="{esc(form_value(data, 'ano', current_year))}" inputmode="numeric" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"{field_class(field_error, 'ano')} required>
+      <div class="temperature-calendar">
+        {extra_days_calendar(data)}
       </div>
-      <div>
-        <label for="filial">Filial</label>
-        <input id="filial" name="filial" value="{esc(form_value(data, 'filial', '386'))}" inputmode="numeric" placeholder="000" maxlength="3" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"{field_class(field_error, 'filial')} required>
-      </div>
-      {extra_days_calendar(data)}
-    </div>
-    <div class="actions" style="margin-top: 14px;">
-      <button class="primary" type="submit">Gerar mapa</button>
     </div>
   </section>
 </form>
