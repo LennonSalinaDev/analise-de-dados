@@ -10,11 +10,13 @@ WORKDIR /app
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
+        default-jre-headless \
         fontconfig \
         fonts-dejavu \
         fonts-liberation \
         fonts-noto-core \
         libreoffice-calc \
+        libreoffice-java-common \
         libreoffice-writer \
     && fc-cache -f \
     && rm -rf /var/lib/apt/lists/*

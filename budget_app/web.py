@@ -2342,6 +2342,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.redirect(f"/orcamentos/{orcamento_id}")
 
         pdf_path, pdf_status = convert_to_pdf(docx_path)
+        if pdf_path is None:
+            print(f"Falha ao gerar PDF do orçamento {orcamento_id}: {pdf_status}", flush=True)
         update_orcamento_files(orcamento_id, pdf_path=pdf_path, pdf_status=pdf_status)
         return self.redirect(f"/orcamentos/{orcamento_id}")
 
@@ -2385,6 +2387,7 @@ class Handler(BaseHTTPRequestHandler):
         if pdf_path is None:
             pdf_path, pdf_status = convert_temperature_map_to_pdf(xlsx_path)
             if pdf_path is None:
+                print(f"Falha ao gerar PDF do mapa {xlsx_path.name}: {pdf_status}", flush=True)
                 return self.redirect(
                     "/mapa-temperatura"
                     f"?arquivo={quote(xlsx_path.name)}&pdf_status={quote(pdf_status)}"

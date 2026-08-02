@@ -321,6 +321,13 @@ def find_soffice() -> str | None:
     return None
 
 
+def compact_error_detail(value: str, limit: int = 1200) -> str:
+    text = " ".join((value or "erro desconhecido").split())
+    if len(text) <= limit:
+        return text
+    return text[: limit - 3] + "..."
+
+
 def convert_xlsx_to_pdf_with_libreoffice(xlsx_path: Path) -> tuple[Path | None, str]:
     soffice = find_soffice()
     if not soffice:
@@ -363,7 +370,7 @@ def convert_xlsx_to_pdf_with_libreoffice(xlsx_path: Path) -> tuple[Path | None, 
 
     if result.returncode == 0 and pdf_path.exists():
         return pdf_path, "PDF gerado com sucesso pelo LibreOffice."
-    detail = (result.stderr or result.stdout or "erro desconhecido").strip()
+    detail = compact_error_detail(result.stderr or result.stdout)
     return None, f"LibreOffice não gerou o PDF: {detail}"
 
 
@@ -410,7 +417,7 @@ def convert_xlsx_to_pdf_with_docker(xlsx_path: Path) -> tuple[Path | None, str]:
 
     if result.returncode == 0 and pdf_path.exists():
         return pdf_path, "PDF gerado com sucesso pelo LibreOffice no Docker."
-    detail = (result.stderr or result.stdout or "erro desconhecido").strip()
+    detail = compact_error_detail(result.stderr or result.stdout)
     return None, f"Docker/LibreOffice não gerou o PDF: {detail}"
 
 
@@ -425,11 +432,11 @@ def convert_temperature_map_to_pdf(xlsx_path: Path) -> tuple[Path | None, str]:
         if pdf_path is not None:
             return pdf_path, status
         errors.append(status)
+    detail = " | ".join(errors)
     return None, (
-        "PDF não gerado neste ambiente. O XLSX foi criado normalmente. "
-        "Para gerar o PDF com o layout original, instale o LibreOffice, "
-        "ative o Docker Desktop com a imagem local configurada, ou execute no Render "
-        "com a imagem Docker atualizada."
+        "PDF não gerado no servidor. O XLSX foi criado normalmente. "
+        "Detalhes: "
+        f"{compact_error_detail(detail, 1800)}"
     )
 
 

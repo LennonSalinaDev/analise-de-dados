@@ -533,8 +533,15 @@ def convert_to_pdf_with_libreoffice(docx_path: Path) -> tuple[Path | None, str]:
 
     if result.returncode == 0 and pdf_path.exists():
         return pdf_path, "PDF gerado com sucesso pelo LibreOffice."
-    detail = (result.stderr or result.stdout or "erro desconhecido").strip()
+    detail = compact_error_detail(result.stderr or result.stdout)
     return None, f"LibreOffice não gerou o PDF: {detail}"
+
+
+def compact_error_detail(value: str, limit: int = 1200) -> str:
+    text = " ".join((value or "erro desconhecido").split())
+    if len(text) <= limit:
+        return text
+    return text[: limit - 3] + "..."
 
 
 def convert_to_pdf(docx_path: Path) -> tuple[Path | None, str]:
