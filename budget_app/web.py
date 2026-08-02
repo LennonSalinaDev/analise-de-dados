@@ -46,10 +46,12 @@ from .storage import (
     verify_login,
 )
 from .temperature_map import (
+    MAP_TYPE_OPTIONS,
     MONTH_OPTIONS,
     convert_temperature_map_to_pdf,
     list_temperature_maps,
     output_file as temperature_output_file,
+    parse_map_types,
     parse_temperature_map_input,
     render_temperature_map,
 )
@@ -444,6 +446,22 @@ def layout(title: str, content: str, *, show_nav: bool = True) -> bytes:
     button.success:hover, .button.success:hover {{
       background: #23894d;
     }}
+    button.info, .button.info {{
+      background: #2563eb;
+      color: #fff;
+    }}
+    button.info:hover, .button.info:hover {{
+      background: #1d4ed8;
+      box-shadow: 0 2px 8px rgba(37, 99, 235, .18);
+    }}
+    button.warning, .button.warning {{
+      background: #f59e0b;
+      color: #fff;
+    }}
+    button.warning:hover, .button.warning:hover {{
+      background: #d97706;
+      box-shadow: 0 2px 8px rgba(245, 158, 11, .2);
+    }}
     button.icon {{
       width: 34px;
       min-height: 34px;
@@ -553,8 +571,72 @@ def layout(title: str, content: str, *, show_nav: bool = True) -> bytes:
     .pdf-status:focus-within .popover {{
       display: block;
     }}
+    .spinner-border {{
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid currentColor;
+      border-right-color: transparent;
+      border-radius: 50%;
+      animation: spinner-rotate .7s linear infinite;
+      margin-right: 6px;
+    }}
+    @keyframes spinner-rotate {{
+      to {{ transform: rotate(360deg); }}
+    }}
     .calendar-picker {{
       margin-top: 16px;
+    }}
+    .switch-group {{
+      display: grid;
+      gap: 10px;
+    }}
+    .form-switch {{
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 38px;
+      color: var(--ink);
+      font-weight: 800;
+      cursor: pointer;
+    }}
+    .form-switch input {{
+      position: absolute;
+      opacity: 0;
+      pointer-events: none;
+    }}
+    .switch-control {{
+      position: relative;
+      width: 44px;
+      height: 24px;
+      flex: 0 0 auto;
+      border-radius: 999px;
+      background: #dfe8e3;
+      border: 1px solid var(--line-strong);
+      transition: background .16s ease, border-color .16s ease;
+    }}
+    .switch-control::after {{
+      content: "";
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #fff;
+      box-shadow: 0 1px 3px rgba(32, 39, 36, .22);
+      transition: transform .16s ease;
+    }}
+    .form-switch input:checked + .switch-control {{
+      background: var(--accent);
+      border-color: var(--accent);
+    }}
+    .form-switch input:checked + .switch-control::after {{
+      transform: translateX(20px);
+    }}
+    .form-switch input:focus + .switch-control {{
+      outline: 2px solid rgba(7, 143, 71, .16);
+      outline-offset: 2px;
     }}
     .calendar-toggle {{
       justify-content: flex-start;
@@ -1410,6 +1492,30 @@ def month_select(data: dict[str, list[str]] | None = None) -> str:
     return "".join(options)
 
 
+def map_type_switches(data: dict[str, list[str]] | None = None) -> str:
+    selected = set(form_list(data, "mapa_tipo", []))
+    switches = []
+    for value, label in MAP_TYPE_OPTIONS:
+        input_id = f"mapa_tipo_{value}"
+        switches.append(
+            f"""
+        <label class="form-switch" for="{input_id}">
+          <input id="{input_id}" name="mapa_tipo" type="checkbox" value="{esc(value)}"{" checked" if value in selected else ""}>
+          <span class="switch-control"></span>
+          <span>{esc(label)}</span>
+        </label>
+            """
+        )
+    return f"""
+      <div class="span-4">
+        <label>Modelos</label>
+        <div class="switch-group">
+          {''.join(switches)}
+        </div>
+      </div>
+    """
+
+
 def extra_days_calendar(data: dict[str, list[str]] | None = None) -> str:
     selected = set(form_list(data, "dias_extras", []))
     try:
@@ -1534,6 +1640,9 @@ def extra_days_calendar(data: dict[str, list[str]] | None = None) -> str:
           const ano = Number(year.value);
           if (!mes || !ano) return;
           const daysInMonth = new Date(ano, mes, 0).getDate();
+          for (const value of Array.from(selectedDays)) {{
+            if (Number(value) > daysInMonth) selectedDays.delete(value);
+          }}
           title.textContent = `${{monthNames[mes - 1]}} ${{ano}}`;
           grid.replaceChildren();
           const firstDay = new Date(ano, mes - 1, 1).getDay();
@@ -1569,18 +1678,20 @@ def temperature_map_form_page(
     error: str = "",
     data: dict[str, list[str]] | None = None,
     field_error: str | None = None,
-    generated_filename: str = "",
+    generated_filenames: list[str] | None = None,
+    pdf_ready_filenames: list[str] | None = None,
     pdf_status: str = "",
 ) -> bytes:
     error_html = f'<section class="error">{esc(error)}</section>' if error else ""
     current_year = today_iso()[:4]
-    generated_html = temperature_maps_section(generated_filename, pdf_status)
+    generated_html = temperature_maps_section(generated_filenames or [], pdf_status, pdf_ready_filenames or [])
     content = f"""
 {error_html}
 <form method="post" action="/mapa-temperatura" autocomplete="off">
   <section>
     <h2>Mapa de temperatura</h2>
     <div class="grid">
+      {map_type_switches(data)}
       <div>
         <label for="mes">Mês</label>
         <select id="mes" name="mes" autocomplete="off"{field_class(field_error, 'mes')}>
@@ -1603,39 +1714,67 @@ def temperature_map_form_page(
   </section>
 </form>
 {generated_html}
+<script>
+document.querySelectorAll(".pdf-generate").forEach((button) => {{
+  button.closest("form").addEventListener("submit", () => {{
+    button.disabled = true;
+    button.innerHTML = '<span class="spinner-border" aria-hidden="true"></span><span role="status">' + button.dataset.loadingLabel + '</span>';
+  }});
+}});
+</script>
 """
     return layout("Mapa de temperatura", content)
 
 
-def temperature_maps_section(generated_filename: str = "", pdf_status: str = "") -> str:
+def temperature_maps_section(
+    generated_filenames: list[str] | str | None = None,
+    pdf_status: str = "",
+    pdf_ready_filenames: list[str] | str | None = None,
+) -> str:
+    if isinstance(generated_filenames, str):
+        generated_names = {generated_filenames} if generated_filenames else set()
+    else:
+        generated_names = set(generated_filenames or [])
+    if isinstance(pdf_ready_filenames, str):
+        pdf_ready_names = {pdf_ready_filenames} if pdf_ready_filenames else set()
+    else:
+        pdf_ready_names = set(pdf_ready_filenames or [])
     maps = list_temperature_maps()
     if not maps:
         return ""
     rows = []
     for xlsx_path in maps:
         pdf_path = temperature_output_file(f"{xlsx_path.stem}.pdf")
-        pdf_html = ""
-        if pdf_path is not None:
-            pdf_html = (
-                f'<a class="button secondary" href="/mapa-temperatura/download/{quote(pdf_path.name)}" '
+        if pdf_path is not None and xlsx_path.name in pdf_ready_names:
+            main_action = (
+                f'<a class="button warning" href="/mapa-temperatura/download/{quote(pdf_path.name)}" '
                 'target="_blank" rel="noopener">Abrir PDF</a>'
             )
-        elif xlsx_path.name == generated_filename and pdf_status:
-            pdf_html = (
-                f'<button class="pdf-status" type="button" aria-label="{esc(pdf_status)}">'
-                f'!<span class="popover">{esc(pdf_status)}</span></button>'
-            )
+            pdf_action = ""
         else:
-            pdf_html = '<span class="muted">PDF indisponível</span>'
-        row_class = ' class="highlight-row"' if xlsx_path.name == generated_filename else ""
+            main_action = (
+                f'<a class="button primary" href="/mapa-temperatura/download/{quote(xlsx_path.name)}">'
+                "Baixar XLSX</a>"
+            )
+            pdf_action = f"""
+              <form method="post" action="/mapa-temperatura/pdf/{quote(xlsx_path.name)}">
+                <button class="info pdf-generate" type="submit" data-loading-label="PDF...">PDF</button>
+              </form>
+            """
+            if xlsx_path.name in generated_names and pdf_status:
+                pdf_action += (
+                    f'<button class="pdf-status" type="button" aria-label="{esc(pdf_status)}">'
+                    f'!<span class="popover">{esc(pdf_status)}</span></button>'
+                )
+        row_class = ' class="highlight-row"' if xlsx_path.name in generated_names else ""
         rows.append(
             f"""
         <tr{row_class}>
           <td>{esc(xlsx_path.name)}</td>
           <td class="row-actions">
             <div class="action-group">
-              <a class="button primary" href="/mapa-temperatura/download/{quote(xlsx_path.name)}">Baixar XLSX</a>
-              {pdf_html}
+              {main_action}
+              {pdf_action}
               <form method="post" action="/mapa-temperatura/excluir/{quote(xlsx_path.name)}" onsubmit="return confirm('Excluir este mapa gerado?');">
                 <button class="danger" type="submit">Excluir</button>
               </form>
@@ -1758,7 +1897,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.respond(
                 200,
                 temperature_map_form_page(
-                    generated_filename=first(query, "arquivo"),
+                    generated_filenames=query.get("arquivo", []),
+                    pdf_ready_filenames=query.get("pdf", []),
                     pdf_status=first(query, "pdf_status"),
                 ),
             )
@@ -1808,6 +1948,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.handle_add_farmaceutico()
         if path == "/mapa-temperatura":
             return self.handle_temperature_map()
+        if path.startswith("/mapa-temperatura/pdf/"):
+            return self.handle_temperature_pdf(path)
         if path.startswith("/mapa-temperatura/excluir/"):
             return self.handle_temperature_delete(path)
         if path.startswith("/farmaceuticos/") and path.endswith("/excluir"):
@@ -1906,6 +2048,10 @@ class Handler(BaseHTTPRequestHandler):
         data = parse_form(self.rfile.read(length))
         try:
             try:
+                map_types = parse_map_types(data.get("mapa_tipo", []))
+            except ValueError as exc:
+                return self.respond(400, temperature_map_form_page(str(exc), data))
+            try:
                 mapa = parse_temperature_map_input(
                     first(data, "mes"),
                     first(data, "ano"),
@@ -1923,12 +2069,12 @@ class Handler(BaseHTTPRequestHandler):
                     field_error = "filial"
                 return self.respond(400, temperature_map_form_page(message, data, field_error))
 
-            xlsx_path = render_temperature_map(mapa)
-            _pdf_path, pdf_status = convert_temperature_map_to_pdf(xlsx_path)
-            return self.redirect(
-                "/mapa-temperatura"
-                f"?arquivo={quote(xlsx_path.name)}&pdf_status={quote(pdf_status)}"
-            )
+            generated_names = []
+            for map_type in map_types:
+                xlsx_path = render_temperature_map(mapa, map_type)
+                generated_names.append(xlsx_path.name)
+            query_parts = [f"arquivo={quote(name)}" for name in generated_names]
+            return self.redirect("/mapa-temperatura?" + "&".join(query_parts))
         except Exception as exc:
             return self.respond(400, temperature_map_form_page(str(exc), data))
 
@@ -2013,6 +2159,24 @@ class Handler(BaseHTTPRequestHandler):
         content_type = mimetypes.guess_type(file_path.name)[0] or "application/octet-stream"
         disposition = "inline" if file_path.suffix.lower() == ".pdf" else "attachment"
         return self.send_file(file_path, content_type, disposition=disposition)
+
+    def handle_temperature_pdf(self, path: str) -> None:
+        filename = unquote(path.rsplit("/", 1)[-1])
+        xlsx_path = temperature_output_file(filename)
+        if xlsx_path is None or xlsx_path.suffix.lower() != ".xlsx":
+            return self.respond(404, layout("Erro", '<section class="error">Arquivo XLSX não encontrado.</section>'))
+
+        pdf_path = temperature_output_file(f"{xlsx_path.stem}.pdf")
+        pdf_status = ""
+        if pdf_path is None:
+            pdf_path, pdf_status = convert_temperature_map_to_pdf(xlsx_path)
+            if pdf_path is None:
+                return self.redirect(
+                    "/mapa-temperatura"
+                    f"?arquivo={quote(xlsx_path.name)}&pdf_status={quote(pdf_status)}"
+                )
+
+        return self.redirect(f"/mapa-temperatura?arquivo={quote(xlsx_path.name)}&pdf={quote(xlsx_path.name)}")
 
     def handle_temperature_delete(self, path: str) -> None:
         filename = unquote(path.rsplit("/", 1)[-1])

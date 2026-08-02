@@ -14,12 +14,7 @@ from openpyxl import load_workbook
 from openpyxl.styles import Alignment
 
 
-TEMPLATE_PATH = Path("modelos/mapa_temperatura/modelo_mapa_temperatura_medicamentos.xlsx")
 OUTPUT_DIR = Path("saida/mapas_temperatura")
-FIRST_DAY_ROW = 10
-LAST_DAY_ROW = 40
-FIRST_VARIANT_COLUMN = 2
-LAST_VARIANT_COLUMN = 21
 INACTIVE_MARK = "****"
 
 MONTH_OPTIONS = [
@@ -37,6 +32,36 @@ MONTH_OPTIONS = [
     (12, "Dezembro"),
 ]
 MONTH_NAMES = {month: name for month, name in MONTH_OPTIONS}
+MAP_TYPE_OPTIONS = [
+    ("geral", "Mapa Temperatura - Geral"),
+    ("geladeira", "Mapa Temperatura - Geladeira"),
+]
+MAP_TYPES = {
+    "geral": {
+        "label": "Mapa Temperatura - Geral",
+        "slug": "geral",
+        "template_path": Path("modelos/mapa_temperatura/modelo_mapa_temperatura_medicamentos.xlsx"),
+        "month_cell": "M7",
+        "year_cell": "R7",
+        "branch_cell": "U7",
+        "first_day_row": 10,
+        "last_day_row": 40,
+        "first_variant_column": 2,
+        "last_variant_column": 21,
+    },
+    "geladeira": {
+        "label": "Mapa Temperatura - Geladeira",
+        "slug": "geladeira",
+        "template_path": Path("modelos/mapa_temperatura/modelo_mapa_temperatura_geladeira.xlsx"),
+        "month_cell": "M7",
+        "year_cell": "R7",
+        "branch_cell": "U7",
+        "first_day_row": 10,
+        "last_day_row": 40,
+        "first_variant_column": 2,
+        "last_variant_column": 21,
+    },
+}
 
 
 @dataclass(frozen=True)
@@ -101,18 +126,37 @@ def parse_temperature_map_input(
     if len(filial_digits) != 3:
         raise ValueError("Campo Filial: informe exatamente 3 dígitos.")
 
+    days_in_month = monthrange(ano_int, mes_int)[1]
+    valid_extra_days = [
+        day
+        for day in parse_extra_days(dias_extras)
+        if day <= days_in_month
+    ]
+
     return TemperatureMapInput(
         mes=mes_int,
         ano=ano_int,
         filial=filial_digits,
-        dias_extras=parse_extra_days(dias_extras),
+        dias_extras=frozenset(valid_extra_days),
     )
 
 
-def ensure_temperature_template() -> Path:
-    if not TEMPLATE_PATH.exists():
-        raise FileNotFoundError(f"Modelo XLSX não encontrado em {TEMPLATE_PATH}")
-    return TEMPLATE_PATH
+def parse_map_types(values: list[str] | None) -> list[str]:
+    selected = [value.strip() for value in values or [] if value.strip()]
+    if not selected:
+        raise ValueError("Campo Modelo: selecione pelo menos um mapa.")
+    invalid = [value for value in selected if value not in MAP_TYPES]
+    if invalid:
+        raise ValueError("Campo Modelo: selecione apenas mapas válidos.")
+    return list(dict.fromkeys(selected))
+
+
+def ensure_temperature_template(map_type: str) -> Path:
+    template_path = MAP_TYPES[map_type]["template_path"]
+    if not template_path.exists():
+        label = MAP_TYPES[map_type]["label"]
+        raise FileNotFoundError(f"Modelo XLSX não encontrado para {label}: {template_path}")
+    return template_path
 
 
 def inactive_temperature_days(data: TemperatureMapInput) -> set[int]:
@@ -137,35 +181,41 @@ def center_cell(cell) -> None:
     )
 
 
-def fill_inactive_temperature_rows(worksheet, data: TemperatureMapInput) -> None:
+def fill_inactive_temperature_rows(worksheet, data: TemperatureMapInput, map_type: str) -> None:
+    config = MAP_TYPES[map_type]
     inactive_days = inactive_temperature_days(data)
+    days_in_month = monthrange(data.ano, data.mes)[1]
+    for day in range(1, 32):
+        row = config["first_day_row"] + day - 1
+        worksheet.row_dimensions[row].hidden = day > days_in_month
     for day in inactive_days:
-        row = FIRST_DAY_ROW + day - 1
-        if row > LAST_DAY_ROW:
+        row = config["first_day_row"] + day - 1
+        if row > config["last_day_row"]:
             continue
-        for column in range(FIRST_VARIANT_COLUMN, LAST_VARIANT_COLUMN + 1):
+        for column in range(config["first_variant_column"], config["last_variant_column"] + 1):
             cell = worksheet.cell(row=row, column=column)
             cell.value = INACTIVE_MARK
             center_cell(cell)
 
 
-def render_temperature_map(data: TemperatureMapInput) -> Path:
-    template_path = ensure_temperature_template()
+def render_temperature_map(data: TemperatureMapInput, map_type: str = "geral") -> Path:
+    config = MAP_TYPES[map_type]
+    template_path = ensure_temperature_template(map_type)
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     workbook = load_workbook(template_path)
     worksheet = workbook.active
-    worksheet["M7"] = data.mes_nome
-    worksheet["R7"] = data.ano
-    worksheet["U7"] = int(data.filial)
-    worksheet["U7"].number_format = "000"
-    center_cell(worksheet["U7"])
-    fill_inactive_temperature_rows(worksheet, data)
+    worksheet[config["month_cell"]] = data.mes_nome
+    worksheet[config["year_cell"]] = data.ano
+    worksheet[config["branch_cell"]] = int(data.filial)
+    worksheet[config["branch_cell"]].number_format = "000"
+    center_cell(worksheet[config["branch_cell"]])
+    fill_inactive_temperature_rows(worksheet, data, map_type)
 
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     nonce = secrets.token_hex(3)
     filename = (
-        f"mapa_temperatura_filial_{data.filial}_"
+        f"mapa_temperatura_{config['slug']}_filial_{data.filial}_"
         f"{safe_filename_part(data.mes_nome)}_{data.ano}_{stamp}_{nonce}.xlsx"
     )
     output_path = OUTPUT_DIR / filename
