@@ -3,6 +3,8 @@ from __future__ import annotations
 import html
 import os
 import mimetypes
+from calendar import monthrange
+from datetime import date
 from decimal import Decimal
 from http.cookies import SimpleCookie
 from pathlib import Path
@@ -46,6 +48,7 @@ from .storage import (
 from .temperature_map import (
     MONTH_OPTIONS,
     convert_temperature_map_to_pdf,
+    list_temperature_maps,
     output_file as temperature_output_file,
     parse_temperature_map_input,
     render_temperature_map,
@@ -464,10 +467,28 @@ def layout(title: str, content: str, *, show_nav: bool = True) -> bytes:
     }}
     .full-history th:nth-child(6), .full-history td:nth-child(6) {{ width: 94px; }}
     .full-history th:nth-child(7), .full-history td:nth-child(7) {{ width: 106px; }}
+    .temperature-history th:first-child,
+    .temperature-history td:first-child {{
+      width: auto;
+      word-break: break-word;
+    }}
+    .temperature-history th:last-child,
+    .temperature-history td:last-child {{
+      width: 330px;
+      max-width: 330px;
+    }}
+    .highlight-row {{
+      background: var(--accent-soft);
+    }}
     .history th:last-child,
     .history td:last-child {{
       width: 128px;
       max-width: 128px;
+    }}
+    .temperature-history th:last-child,
+    .temperature-history td:last-child {{
+      width: 330px;
+      max-width: 330px;
     }}
     .row-actions {{
       padding-left: 6px;
@@ -495,6 +516,148 @@ def layout(title: str, content: str, *, show_nav: bool = True) -> bytes:
     .muted {{ color: var(--muted); }}
     .ok {{ color: var(--ok); font-weight: 700; }}
     .warn {{ color: var(--warn); font-weight: 700; }}
+    .success-title {{ color: var(--ok); }}
+    .pdf-status {{
+      position: relative;
+      width: 30px;
+      min-height: 30px;
+      padding: 0;
+      border-radius: 999px;
+      border: 1px solid #f2c36b;
+      background: #fff7e6;
+      color: var(--warn);
+      font-weight: 900;
+    }}
+    .pdf-status .popover {{
+      display: none;
+      position: absolute;
+      right: 0;
+      bottom: calc(100% + 8px);
+      z-index: 10;
+      width: min(320px, calc(100vw - 40px));
+      padding: 10px 12px;
+      border: 1px solid #e5bf72;
+      border-radius: 6px;
+      background: #fffaf0;
+      color: #5f4300;
+      box-shadow: 0 8px 20px rgba(32, 39, 36, .16);
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1.35;
+      white-space: normal;
+      overflow-wrap: anywhere;
+      text-align: left;
+    }}
+    .pdf-status:hover .popover,
+    .pdf-status:focus .popover,
+    .pdf-status:focus-within .popover {{
+      display: block;
+    }}
+    .calendar-picker {{
+      margin-top: 16px;
+    }}
+    .calendar-toggle {{
+      justify-content: flex-start;
+      margin-bottom: 0;
+    }}
+    .calendar-collapse {{
+      max-height: 0;
+      overflow: hidden;
+      opacity: 0;
+      transition: max-height .24s ease, opacity .18s ease, margin-top .18s ease;
+    }}
+    .calendar-collapse.open {{
+      max-height: 560px;
+      opacity: 1;
+      margin-top: 10px;
+    }}
+    .calendar-shell {{
+      max-width: 460px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      background: #fff;
+    }}
+    .calendar-title {{
+      padding: 10px 12px;
+      color: var(--accent);
+      font-size: 20px;
+      font-weight: 800;
+      line-height: 1.1;
+      text-transform: lowercase;
+      background: #fafcfb;
+      border-bottom: 1px solid var(--line);
+    }}
+    .calendar-weekdays,
+    .calendar-grid {{
+      display: grid;
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+    }}
+    .calendar-weekdays span {{
+      padding: 6px 4px;
+      background: var(--accent);
+      color: #fff;
+      font-weight: 800;
+      font-size: 11px;
+      text-align: center;
+      border-right: 1px solid rgba(255,255,255,.25);
+    }}
+    .calendar-weekdays span:last-child {{
+      border-right: 0;
+    }}
+    .day-check {{
+      position: relative;
+      display: block;
+      min-height: 42px;
+      border-right: 1px solid #cfd8d2;
+      border-bottom: 1px solid #cfd8d2;
+      background: #fff;
+    }}
+    .day-check input {{
+      position: absolute;
+      opacity: 0;
+      pointer-events: none;
+    }}
+    .day-check span {{
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+      height: 100%;
+      padding: 6px;
+      border: 2px solid transparent;
+      border-radius: 0;
+      background: transparent;
+      color: var(--ink);
+      font-size: 13px;
+      font-weight: 800;
+      cursor: pointer;
+    }}
+    .day-check input:checked + span {{
+      border-color: var(--accent);
+      background: var(--accent-soft);
+      color: var(--accent-dark);
+    }}
+    .day-check.sunday span {{
+      color: var(--accent);
+    }}
+    .day-check.saturday span {{
+      color: var(--accent);
+    }}
+    .day-check.blank {{
+      background: #f3f5f4;
+    }}
+    .day-check.blank span {{
+      cursor: not-allowed;
+    }}
+    .calendar-legend {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 14px;
+      margin-top: 10px;
+      font-size: 12px;
+      color: var(--muted);
+      font-weight: 700;
+    }}
     .manager-row {{
       display: grid;
       grid-template-columns: minmax(220px, 1fr) auto;
@@ -614,23 +777,34 @@ def layout(title: str, content: str, *, show_nav: bool = True) -> bytes:
       #produtos tr,
       #produtos td,
       .history.recent-history,
+      .history.temperature-history,
       .history.recent-history thead,
+      .history.temperature-history thead,
       .history.recent-history tbody,
+      .history.temperature-history tbody,
       .history.recent-history tr,
+      .history.temperature-history tr,
       .history.recent-history td {{
         display: block;
         width: 100%;
       }}
+      .history.temperature-history td {{
+        display: block;
+        width: 100%;
+      }}
       #produtos,
-      .history.recent-history {{
+      .history.recent-history,
+      .history.temperature-history {{
         min-width: 0;
       }}
       #produtos thead,
-      .history.recent-history thead {{
+      .history.recent-history thead,
+      .history.temperature-history thead {{
         display: none;
       }}
       #produtos tr,
-      .history.recent-history tr {{
+      .history.recent-history tr,
+      .history.temperature-history tr {{
         border: 1px solid var(--line);
         border-radius: 8px;
         padding: 10px;
@@ -638,12 +812,14 @@ def layout(title: str, content: str, *, show_nav: bool = True) -> bytes:
         background: #fff;
       }}
       #produtos td,
-      .history.recent-history td {{
+      .history.recent-history td,
+      .history.temperature-history td {{
         border-bottom: 0;
         padding: 7px 0;
       }}
       #produtos td::before,
-      .history.recent-history td::before {{
+      .history.recent-history td::before,
+      .history.temperature-history td::before {{
         display: block;
         margin-bottom: 5px;
         color: var(--muted);
@@ -670,7 +846,17 @@ def layout(title: str, content: str, *, show_nav: bool = True) -> bytes:
       .history.recent-history td:nth-child(3)::before {{ content: "Farm. resp."; }}
       .history.recent-history td:nth-child(4)::before {{ content: "Data"; }}
       .history.recent-history td:nth-child(5)::before {{ content: "Total"; }}
+      .history.temperature-history td:nth-child(1)::before {{ content: "Arquivo"; }}
+      .history.temperature-history td:nth-child(2)::before {{
+        content: "";
+        display: none;
+      }}
       .history.recent-history td:last-child {{
+        max-width: none;
+        width: 100%;
+        padding-top: 10px;
+      }}
+      .history.temperature-history td:last-child {{
         max-width: none;
         width: 100%;
         padding-top: 10px;
@@ -681,8 +867,14 @@ def layout(title: str, content: str, *, show_nav: bool = True) -> bytes:
       .history.recent-history .action-group {{
         justify-content: stretch;
       }}
+      .history.temperature-history .action-group {{
+        justify-content: stretch;
+        flex-wrap: wrap;
+      }}
       .history.recent-history .action-group a,
-      .history.recent-history .action-group button {{
+      .history.recent-history .action-group button,
+      .history.temperature-history .action-group a,
+      .history.temperature-history .action-group button {{
         flex: 1 1 0;
       }}
       .table-wrap {{ overflow-x: auto; }}
@@ -696,6 +888,24 @@ def layout(title: str, content: str, *, show_nav: bool = True) -> bytes:
       }}
       .final-actions .primary {{
         width: 100%;
+      }}
+      .calendar-title {{
+        font-size: 18px;
+      }}
+      .calendar-weekdays span {{
+        font-size: 9px;
+        padding-left: 2px;
+        padding-right: 2px;
+      }}
+      .day-check {{
+        min-height: 38px;
+      }}
+      .day-check span {{
+        font-size: 12px;
+        padding: 5px;
+      }}
+      .calendar-collapse.open {{
+        max-height: 520px;
       }}
       .manager-row,
       .manager-row.compact,
@@ -1200,13 +1410,171 @@ def month_select(data: dict[str, list[str]] | None = None) -> str:
     return "".join(options)
 
 
+def extra_days_calendar(data: dict[str, list[str]] | None = None) -> str:
+    selected = set(form_list(data, "dias_extras", []))
+    try:
+        current_month = int(form_value(data, "mes", str(int(today_iso()[5:7]))) or today_iso()[5:7])
+        current_year = int(form_value(data, "ano", today_iso()[:4]) or today_iso()[:4])
+        days_in_month = monthrange(current_year, current_month)[1]
+        first_weekday = date(current_year, current_month, 1).weekday()
+        leading_blanks = (first_weekday + 1) % 7
+        sunday_days = {
+            day
+            for day in range(1, days_in_month + 1)
+            if date(current_year, current_month, day).weekday() == 6
+        }
+    except Exception:
+        current_month = int(today_iso()[5:7])
+        current_year = int(today_iso()[:4])
+        days_in_month = 31
+        leading_blanks = 0
+        sunday_days = set()
+    days_html = []
+    for _ in range(leading_blanks):
+        days_html.append('<div class="day-check blank"><span></span></div>')
+    for day in range(1, 32):
+        if day > days_in_month:
+            break
+        value = str(day)
+        classes = ["day-check"]
+        if day in sunday_days:
+            classes.append("sunday")
+        if date(current_year, current_month, day).weekday() == 5:
+            classes.append("saturday")
+        days_html.append(
+            f"""
+        <label class="{' '.join(classes)}">
+          <input type="checkbox" name="dias_extras" value="{value}"{" checked" if value in selected else ""}>
+          <span>{day}</span>
+        </label>
+            """
+        )
+    trailing_blanks = (7 - (len(days_html) % 7)) % 7
+    for _ in range(trailing_blanks):
+        days_html.append('<div class="day-check blank"><span></span></div>')
+    month_label = MONTH_OPTIONS[current_month - 1][1].lower() if 1 <= current_month <= 12 else ""
+    return f"""
+      <div class="calendar-picker span-4">
+        <div class="actions calendar-toggle">
+          <button class="secondary" id="calendar-toggle-button" type="button" aria-expanded="false" aria-controls="extra-days-calendar">
+            Selecionar dias
+          </button>
+        </div>
+        <div class="calendar-collapse" id="extra-days-calendar" hidden>
+          <div class="calendar-shell">
+            <div class="calendar-title" id="calendar-title">{esc(month_label)} {current_year}</div>
+            <div class="calendar-weekdays">
+              <span>domingo</span>
+              <span>segunda-feira</span>
+              <span>terça-feira</span>
+              <span>quarta-feira</span>
+              <span>quinta-feira</span>
+              <span>sexta-feira</span>
+              <span>sábado</span>
+            </div>
+            <div class="calendar-grid" id="calendar-grid">
+              {''.join(days_html)}
+            </div>
+          </div>
+          <div class="calendar-legend">
+            <span>Domingos já são marcados automaticamente.</span>
+            <span>Dias selecionados também recebem ****.</span>
+          </div>
+        </div>
+      </div>
+      <script>
+      (function () {{
+        const month = document.getElementById("mes");
+        const year = document.getElementById("ano");
+        const grid = document.getElementById("calendar-grid");
+        const title = document.getElementById("calendar-title");
+        const toggle = document.getElementById("calendar-toggle-button");
+        const panel = document.getElementById("extra-days-calendar");
+        const selectedDays = new Set(
+          Array.from(document.querySelectorAll('input[name="dias_extras"]:checked')).map((input) => input.value)
+        );
+        const monthNames = {str([label.lower() for _, label in MONTH_OPTIONS])};
+        const weekdayNames = [
+          "domingo",
+          "segunda-feira",
+          "terça-feira",
+          "quarta-feira",
+          "quinta-feira",
+          "sexta-feira",
+          "sábado",
+        ];
+        function dayCell(day, weekday) {{
+          const label = document.createElement("label");
+          label.className = "day-check";
+          if (weekday === 0) label.classList.add("sunday");
+          if (weekday === 6) label.classList.add("saturday");
+          const input = document.createElement("input");
+          input.type = "checkbox";
+          input.name = "dias_extras";
+          input.value = String(day);
+          input.checked = selectedDays.has(String(day));
+          input.addEventListener("change", () => {{
+            if (input.checked) selectedDays.add(input.value);
+            else selectedDays.delete(input.value);
+          }});
+          const span = document.createElement("span");
+          span.textContent = String(day);
+          label.appendChild(input);
+          label.appendChild(span);
+          return label;
+        }}
+        function blankCell() {{
+          const cell = document.createElement("div");
+          cell.className = "day-check blank";
+          cell.innerHTML = "<span></span>";
+          return cell;
+        }}
+        function updateCalendar() {{
+          const mes = Number(month.value);
+          const ano = Number(year.value);
+          if (!mes || !ano) return;
+          const daysInMonth = new Date(ano, mes, 0).getDate();
+          title.textContent = `${{monthNames[mes - 1]}} ${{ano}}`;
+          grid.replaceChildren();
+          const firstDay = new Date(ano, mes - 1, 1).getDay();
+          for (let index = 0; index < firstDay; index += 1) grid.appendChild(blankCell());
+          for (let day = 1; day <= daysInMonth; day += 1) {{
+            const weekday = new Date(ano, mes - 1, day).getDay();
+            grid.appendChild(dayCell(day, weekday));
+          }}
+          while (grid.children.length % 7 !== 0) grid.appendChild(blankCell());
+        }}
+        toggle.addEventListener("click", () => {{
+          const shouldOpen = !panel.classList.contains("open");
+          if (shouldOpen) {{
+            panel.hidden = false;
+            requestAnimationFrame(() => panel.classList.add("open"));
+            updateCalendar();
+          }} else {{
+            panel.classList.remove("open");
+            setTimeout(() => {{
+              if (!panel.classList.contains("open")) panel.hidden = true;
+            }}, 240);
+          }}
+          toggle.setAttribute("aria-expanded", String(shouldOpen));
+        }});
+        month.addEventListener("change", updateCalendar);
+        year.addEventListener("input", updateCalendar);
+      }})();
+      </script>
+    """
+
+
 def temperature_map_form_page(
     error: str = "",
     data: dict[str, list[str]] | None = None,
     field_error: str | None = None,
+    generated_filename: str = "",
+    pdf_status: str = "",
 ) -> bytes:
     error_html = f'<section class="error">{esc(error)}</section>' if error else ""
     current_year = today_iso()[:4]
+    generated_html = temperature_maps_section(generated_filename, pdf_status)
     content = f"""
 {error_html}
 <form method="post" action="/mapa-temperatura" autocomplete="off">
@@ -1225,47 +1593,72 @@ def temperature_map_form_page(
       </div>
       <div>
         <label for="filial">Filial</label>
-        <input id="filial" name="filial" value="{esc(form_value(data, 'filial'))}" inputmode="numeric" placeholder="000" maxlength="3" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"{field_class(field_error, 'filial')} required>
+        <input id="filial" name="filial" value="{esc(form_value(data, 'filial', '386'))}" inputmode="numeric" placeholder="000" maxlength="3" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"{field_class(field_error, 'filial')} required>
       </div>
+      {extra_days_calendar(data)}
     </div>
-  </section>
-  <section>
-    <div class="actions">
+    <div class="actions" style="margin-top: 14px;">
       <button class="primary" type="submit">Gerar mapa</button>
     </div>
   </section>
 </form>
+{generated_html}
 """
     return layout("Mapa de temperatura", content)
 
 
-def temperature_map_result_page(filename: str, pdf_status: str = "") -> bytes:
-    xlsx_path = temperature_output_file(filename)
-    if xlsx_path is None or xlsx_path.suffix.lower() != ".xlsx":
-        return layout("Não encontrado", '<section class="error">Mapa de temperatura não encontrado.</section>')
-
-    pdf_name = f"{xlsx_path.stem}.pdf"
-    pdf_path = temperature_output_file(pdf_name)
-    pdf_html = ""
-    if pdf_path is not None:
-        pdf_html = (
-            f'<a class="button secondary" href="/mapa-temperatura/download/{quote(pdf_path.name)}" '
-            'target="_blank" rel="noopener">Abrir PDF</a>'
+def temperature_maps_section(generated_filename: str = "", pdf_status: str = "") -> str:
+    maps = list_temperature_maps()
+    if not maps:
+        return ""
+    rows = []
+    for xlsx_path in maps:
+        pdf_path = temperature_output_file(f"{xlsx_path.stem}.pdf")
+        pdf_html = ""
+        if pdf_path is not None:
+            pdf_html = (
+                f'<a class="button secondary" href="/mapa-temperatura/download/{quote(pdf_path.name)}" '
+                'target="_blank" rel="noopener">Abrir PDF</a>'
+            )
+        elif xlsx_path.name == generated_filename and pdf_status:
+            pdf_html = (
+                f'<button class="pdf-status" type="button" aria-label="{esc(pdf_status)}">'
+                f'!<span class="popover">{esc(pdf_status)}</span></button>'
+            )
+        else:
+            pdf_html = '<span class="muted">PDF indisponível</span>'
+        row_class = ' class="highlight-row"' if xlsx_path.name == generated_filename else ""
+        rows.append(
+            f"""
+        <tr{row_class}>
+          <td>{esc(xlsx_path.name)}</td>
+          <td class="row-actions">
+            <div class="action-group">
+              <a class="button primary" href="/mapa-temperatura/download/{quote(xlsx_path.name)}">Baixar XLSX</a>
+              {pdf_html}
+              <form method="post" action="/mapa-temperatura/excluir/{quote(xlsx_path.name)}" onsubmit="return confirm('Excluir este mapa gerado?');">
+                <button class="danger" type="submit">Excluir</button>
+              </form>
+            </div>
+          </td>
+        </tr>
+            """
         )
-    elif pdf_status:
-        pdf_html = f'<span class="warn">{esc(pdf_status)}</span>'
-
-    content = f"""
+    return f"""
 <section>
-  <h2>Mapa gerado</h2>
-  <p class="ok">XLSX criado com sucesso.</p>
-  <div class="actions">
-    <a class="button primary" href="/mapa-temperatura/download/{quote(xlsx_path.name)}">Baixar XLSX</a>
-    {pdf_html}
-    <a class="button secondary" href="/mapa-temperatura">Novo mapa</a>
+  <h2 class="success-title">Mapas gerados</h2>
+  <div class="table-wrap">
+    <table class="history temperature-history">
+      <thead><tr><th></th><th></th></tr></thead>
+      <tbody>{''.join(rows)}</tbody>
+    </table>
   </div>
 </section>
 """
+
+
+def temperature_map_result_page(filename: str, pdf_status: str = "") -> bytes:
+    content = temperature_maps_section(filename, pdf_status)
     return layout("Mapa gerado", content)
 
 
@@ -1361,7 +1754,14 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/":
             return self.respond(200, form_page())
         if path == "/mapa-temperatura":
-            return self.respond(200, temperature_map_form_page())
+            query = parse_qs(parsed.query, keep_blank_values=True)
+            return self.respond(
+                200,
+                temperature_map_form_page(
+                    generated_filename=first(query, "arquivo"),
+                    pdf_status=first(query, "pdf_status"),
+                ),
+            )
         if path == "/mapa-temperatura/resultado":
             query = parse_qs(parsed.query, keep_blank_values=True)
             filename = first(query, "arquivo")
@@ -1408,6 +1808,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.handle_add_farmaceutico()
         if path == "/mapa-temperatura":
             return self.handle_temperature_map()
+        if path.startswith("/mapa-temperatura/excluir/"):
+            return self.handle_temperature_delete(path)
         if path.startswith("/farmaceuticos/") and path.endswith("/excluir"):
             return self.handle_delete_farmaceutico(path)
         if path.startswith("/orcamentos/") and path.endswith("/gerar-pdf"):
@@ -1508,6 +1910,7 @@ class Handler(BaseHTTPRequestHandler):
                     first(data, "mes"),
                     first(data, "ano"),
                     first(data, "filial"),
+                    data.get("dias_extras", []),
                 )
             except ValueError as exc:
                 message = str(exc)
@@ -1523,7 +1926,7 @@ class Handler(BaseHTTPRequestHandler):
             xlsx_path = render_temperature_map(mapa)
             _pdf_path, pdf_status = convert_temperature_map_to_pdf(xlsx_path)
             return self.redirect(
-                "/mapa-temperatura/resultado"
+                "/mapa-temperatura"
                 f"?arquivo={quote(xlsx_path.name)}&pdf_status={quote(pdf_status)}"
             )
         except Exception as exc:
@@ -1610,6 +2013,17 @@ class Handler(BaseHTTPRequestHandler):
         content_type = mimetypes.guess_type(file_path.name)[0] or "application/octet-stream"
         disposition = "inline" if file_path.suffix.lower() == ".pdf" else "attachment"
         return self.send_file(file_path, content_type, disposition=disposition)
+
+    def handle_temperature_delete(self, path: str) -> None:
+        filename = unquote(path.rsplit("/", 1)[-1])
+        file_path = temperature_output_file(filename)
+        if file_path is None or file_path.suffix.lower() != ".xlsx":
+            return self.respond(404, layout("Erro", '<section class="error">Mapa não encontrado.</section>'))
+        pdf_path = temperature_output_file(f"{file_path.stem}.pdf")
+        file_path.unlink(missing_ok=True)
+        if pdf_path is not None:
+            pdf_path.unlink(missing_ok=True)
+        return self.redirect("/mapa-temperatura")
 
     def handle_download(self, path: str) -> None:
         parts = path.strip("/").split("/")

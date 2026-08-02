@@ -44,6 +44,7 @@ class TemperatureMapInput:
     mes: int
     ano: int
     filial: str
+    dias_extras: frozenset[int] = frozenset()
 
     @property
     def mes_nome(self) -> str:
@@ -60,7 +61,28 @@ def safe_filename_part(value: str) -> str:
     return "".join(allowed).strip("_") or "mapa"
 
 
-def parse_temperature_map_input(mes: str, ano: str, filial: str) -> TemperatureMapInput:
+def parse_extra_days(values: list[str] | None) -> frozenset[int]:
+    days = set()
+    for value in values or []:
+        value = value.strip()
+        if not value:
+            continue
+        try:
+            day = int(value)
+        except ValueError as exc:
+            raise ValueError("Campo Calendário: selecione apenas dias válidos.") from exc
+        if day < 1 or day > 31:
+            raise ValueError("Campo Calendário: selecione apenas dias entre 1 e 31.")
+        days.add(day)
+    return frozenset(days)
+
+
+def parse_temperature_map_input(
+    mes: str,
+    ano: str,
+    filial: str,
+    dias_extras: list[str] | None = None,
+) -> TemperatureMapInput:
     try:
         mes_int = int(mes)
     except ValueError as exc:
@@ -79,7 +101,12 @@ def parse_temperature_map_input(mes: str, ano: str, filial: str) -> TemperatureM
     if len(filial_digits) != 3:
         raise ValueError("Campo Filial: informe exatamente 3 dígitos.")
 
-    return TemperatureMapInput(mes=mes_int, ano=ano_int, filial=filial_digits)
+    return TemperatureMapInput(
+        mes=mes_int,
+        ano=ano_int,
+        filial=filial_digits,
+        dias_extras=parse_extra_days(dias_extras),
+    )
 
 
 def ensure_temperature_template() -> Path:
@@ -90,7 +117,8 @@ def ensure_temperature_template() -> Path:
 
 def inactive_temperature_days(data: TemperatureMapInput) -> set[int]:
     days_in_month = monthrange(data.ano, data.mes)[1]
-    inactive_days = {day for day in range(days_in_month + 1, 32)}
+    inactive_days = set(data.dias_extras)
+    inactive_days.update(day for day in range(days_in_month + 1, 32))
     for day in range(1, days_in_month + 1):
         if date(data.ano, data.mes, day).weekday() == 6:
             inactive_days.add(day)
@@ -215,8 +243,22 @@ try {{
     return None, f"Microsoft Excel não gerou o PDF: {detail}"
 
 
+def find_soffice() -> str | None:
+    found = shutil.which("soffice") or shutil.which("libreoffice")
+    if found:
+        return found
+    for candidate in (
+        Path("C:/Program Files/LibreOffice/program/soffice.exe"),
+        Path("C:/Program Files (x86)/LibreOffice/program/soffice.exe"),
+        Path.home() / "AppData/Local/Programs/LibreOffice/program/soffice.exe",
+    ):
+        if candidate.exists():
+            return str(candidate)
+    return None
+
+
 def convert_xlsx_to_pdf_with_libreoffice(xlsx_path: Path) -> tuple[Path | None, str]:
-    soffice = shutil.which("soffice") or shutil.which("libreoffice")
+    soffice = find_soffice()
     if not soffice:
         return None, "LibreOffice/soffice não encontrado."
 
@@ -255,17 +297,69 @@ def convert_xlsx_to_pdf_with_libreoffice(xlsx_path: Path) -> tuple[Path | None, 
     return None, f"LibreOffice não gerou o PDF: {detail}"
 
 
+def convert_xlsx_to_pdf_with_docker(xlsx_path: Path) -> tuple[Path | None, str]:
+    docker = shutil.which("docker")
+    if not docker:
+        return None, "Docker não encontrado."
+
+    image = os.environ.get("LIBREOFFICE_DOCKER_IMAGE", "orcamento-clamed-local")
+    output_dir = xlsx_path.parent.resolve()
+    pdf_path = xlsx_path.with_suffix(".pdf")
+    pdf_path.unlink(missing_ok=True)
+    container_file = f"/work/{xlsx_path.name}"
+
+    try:
+        result = subprocess.run(
+            [
+                docker,
+                "run",
+                "--rm",
+                "-v",
+                f"{output_dir}:/work",
+                "-w",
+                "/work",
+                "--entrypoint",
+                "soffice",
+                image,
+                "--headless",
+                "--nologo",
+                "--nofirststartwizard",
+                "--convert-to",
+                "pdf",
+                "--outdir",
+                "/work",
+                container_file,
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+    except Exception as exc:
+        return None, f"Docker/LibreOffice não gerou o PDF: {exc}"
+
+    if result.returncode == 0 and pdf_path.exists():
+        return pdf_path, "PDF gerado com sucesso pelo LibreOffice no Docker."
+    detail = (result.stderr or result.stdout or "erro desconhecido").strip()
+    return None, f"Docker/LibreOffice não gerou o PDF: {detail}"
+
+
 def convert_temperature_map_to_pdf(xlsx_path: Path) -> tuple[Path | None, str]:
     errors = []
-    for converter in (convert_xlsx_to_pdf_with_excel, convert_xlsx_to_pdf_with_libreoffice):
+    for converter in (
+        convert_xlsx_to_pdf_with_libreoffice,
+        convert_xlsx_to_pdf_with_docker,
+        convert_xlsx_to_pdf_with_excel,
+    ):
         pdf_path, status = converter(xlsx_path)
         if pdf_path is not None:
             return pdf_path, status
         errors.append(status)
     return None, (
-        "PDF não gerado neste ambiente. O XLSX foi criado normalmente; "
-        "para visualizar em PDF, é necessário ter LibreOffice/soffice disponível "
-        "ou executar no Render com a imagem Docker atualizada."
+        "PDF não gerado neste ambiente. O XLSX foi criado normalmente. "
+        "Para gerar o PDF com o layout original, instale o LibreOffice, "
+        "ative o Docker Desktop com a imagem local configurada, ou execute no Render "
+        "com a imagem Docker atualizada."
     )
 
 
@@ -278,3 +372,8 @@ def output_file(filename: str) -> Path | None:
     except ValueError:
         return None
     return path if path.exists() else None
+
+
+def list_temperature_maps() -> list[Path]:
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    return sorted(OUTPUT_DIR.glob("*.xlsx"), key=lambda path: path.stat().st_mtime, reverse=True)
