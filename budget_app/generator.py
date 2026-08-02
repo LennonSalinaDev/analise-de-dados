@@ -4,6 +4,7 @@ import csv
 import os
 import shutil
 import subprocess
+import tempfile
 from copy import deepcopy
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
@@ -18,8 +19,8 @@ from .storage import Item, Orcamento, iter_export_rows
 
 
 TEMPLATE_DIR = Path("modelos")
-OUTPUT_DIR = Path("saida")
-EXPORT_PATH = Path("data/orcamentos_export.csv")
+OUTPUT_DIR = Path(os.environ.get("ORCAMENTOS_OUTPUT_DIR", "saida"))
+EXPORT_PATH = Path(os.environ.get("EXPORT_PATH", "data/orcamentos_export.csv"))
 
 
 MONTHS_PT_BR = [
@@ -493,8 +494,6 @@ def convert_to_pdf_with_libreoffice(docx_path: Path) -> tuple[Path | None, str]:
     if not soffice:
         return None, "LibreOffice/soffice não encontrado."
 
-    profile_dir = Path("tmp/libreoffice-profile").resolve()
-    profile_dir.mkdir(parents=True, exist_ok=True)
     source_path = docx_path.resolve()
     output_dir = docx_path.parent.resolve()
     pdf_path = docx_path.with_suffix(".pdf")
@@ -503,24 +502,32 @@ def convert_to_pdf_with_libreoffice(docx_path: Path) -> tuple[Path | None, str]:
     temp_pdf_path.unlink(missing_ok=True)
 
     try:
-        result = subprocess.run(
-            [
-                soffice,
-                "--headless",
-                "--nologo",
-                "--nofirststartwizard",
-                f"-env:UserInstallation=file:///{profile_dir.as_posix()}",
-                "--convert-to",
-                "pdf",
-                "--outdir",
-                str(output_dir),
-                str(source_path),
-            ],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
+        with tempfile.TemporaryDirectory(prefix="lo-profile-") as profile:
+            profile_dir = Path(profile).resolve()
+            env = {
+                **os.environ,
+                "HOME": os.environ.get("HOME", "/tmp"),
+                "SAL_USE_VCLPLUGIN": os.environ.get("SAL_USE_VCLPLUGIN", "svp"),
+            }
+            result = subprocess.run(
+                [
+                    soffice,
+                    "--headless",
+                    "--nologo",
+                    "--nofirststartwizard",
+                    f"-env:UserInstallation={profile_dir.as_uri()}",
+                    "--convert-to",
+                    "pdf",
+                    "--outdir",
+                    str(output_dir),
+                    str(source_path),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=90,
+                env=env,
+            )
     except Exception as exc:
         return None, f"LibreOffice não gerou o PDF: {exc}"
 

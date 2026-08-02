@@ -124,10 +124,15 @@ O serviço usa:
 ```text
 Health Check Path: /healthz
 DB_PATH: /var/data/orcamentos.db
+ORCAMENTOS_OUTPUT_DIR: /var/data/saida
+TEMPERATURE_MAP_OUTPUT_DIR: /var/data/saida/mapas_temperatura
+EXPORT_PATH: /var/data/orcamentos_export.csv
 HOST: 0.0.0.0
+HOME: /tmp
+SAL_USE_VCLPLUGIN: svp
 ```
 
-O `render.yaml` também define um disco persistente em `/var/data` para guardar o banco SQLite. Isso é importante porque o login, os responsáveis e o histórico ficam no banco. Sem disco persistente, esses dados podem ser perdidos em reinícios ou redeploys.
+O `render.yaml` também define um disco persistente em `/var/data` para guardar o banco SQLite e os arquivos gerados. Isso é importante porque o login, os responsáveis, o histórico e os DOCX/XLSX/PDF gerados dependem desses arquivos. Sem disco persistente, esses dados podem ser perdidos em reinícios ou redeploys.
 
 Se você estiver criando manualmente como Python, o DOCX funciona, mas o PDF não terá LibreOffice instalado por padrão. Para gerar PDF na nuvem, use Docker.
 
@@ -143,6 +148,6 @@ Não digite `Start Command: python app.py`. Se esse texto completo for colocado 
 bash: line 1: Start: command not found
 ```
 
-No Render, o PDF pelo Microsoft Word não funciona, porque o ambiente é Linux e não tem Word instalado. Com o `Dockerfile` deste projeto, o LibreOffice Writer é instalado dentro da imagem e o sistema usa `soffice --headless` para converter DOCX em PDF.
+No Render, o PDF pelo Microsoft Word não funciona, porque o ambiente é Linux e não tem Word instalado. Com o `Dockerfile` deste projeto, o LibreOffice Calc/Writer é instalado dentro da imagem e o sistema usa `soffice --headless` para converter DOCX/XLSX em PDF. Cada conversão usa um perfil temporário isolado do LibreOffice, reduzindo falhas intermitentes quando o serviço recebe mais de uma ação próxima.
 
 Atenção: o histórico atual usa SQLite em arquivo local. Em hospedagem gratuita, isso serve para teste/demonstração, mas pode ser perdido em redeploy/restart. Para uso real em nuvem, o próximo passo é trocar o histórico para PostgreSQL.

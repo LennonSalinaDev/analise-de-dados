@@ -3,15 +3,20 @@ FROM python:3.13-slim
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV HOST=0.0.0.0
+ENV HOME=/tmp
+ENV SAL_USE_VCLPLUGIN=svp
 
 WORKDIR /app
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
+        fontconfig \
         fonts-dejavu \
         fonts-liberation \
+        fonts-noto-core \
         libreoffice-calc \
         libreoffice-writer \
+    && fc-cache -f \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

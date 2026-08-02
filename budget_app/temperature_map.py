@@ -4,6 +4,7 @@ import os
 import secrets
 import shutil
 import subprocess
+import tempfile
 from calendar import monthrange
 from copy import copy
 from dataclasses import dataclass
@@ -14,7 +15,7 @@ from openpyxl import load_workbook
 from openpyxl.styles import Alignment
 
 
-OUTPUT_DIR = Path("saida/mapas_temperatura")
+OUTPUT_DIR = Path(os.environ.get("TEMPERATURE_MAP_OUTPUT_DIR", "saida/mapas_temperatura"))
 INACTIVE_MARK = "****"
 
 MONTH_OPTIONS = [
@@ -325,32 +326,38 @@ def convert_xlsx_to_pdf_with_libreoffice(xlsx_path: Path) -> tuple[Path | None, 
     if not soffice:
         return None, "LibreOffice/soffice não encontrado."
 
-    profile_dir = Path("tmp/libreoffice-profile").resolve()
-    profile_dir.mkdir(parents=True, exist_ok=True)
     source_path = xlsx_path.resolve()
     output_dir = xlsx_path.parent.resolve()
     pdf_path = xlsx_path.with_suffix(".pdf")
     pdf_path.unlink(missing_ok=True)
 
     try:
-        result = subprocess.run(
-            [
-                soffice,
-                "--headless",
-                "--nologo",
-                "--nofirststartwizard",
-                f"-env:UserInstallation=file:///{profile_dir.as_posix()}",
-                "--convert-to",
-                "pdf",
-                "--outdir",
-                str(output_dir),
-                str(source_path),
-            ],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=90,
-        )
+        with tempfile.TemporaryDirectory(prefix="lo-profile-") as profile:
+            profile_dir = Path(profile).resolve()
+            env = {
+                **os.environ,
+                "HOME": os.environ.get("HOME", "/tmp"),
+                "SAL_USE_VCLPLUGIN": os.environ.get("SAL_USE_VCLPLUGIN", "svp"),
+            }
+            result = subprocess.run(
+                [
+                    soffice,
+                    "--headless",
+                    "--nologo",
+                    "--nofirststartwizard",
+                    f"-env:UserInstallation={profile_dir.as_uri()}",
+                    "--convert-to",
+                    "pdf",
+                    "--outdir",
+                    str(output_dir),
+                    str(source_path),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=120,
+                env=env,
+            )
     except Exception as exc:
         return None, f"LibreOffice não gerou o PDF: {exc}"
 

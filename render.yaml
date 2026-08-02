@@ -8,8 +8,18 @@ services:
     envVars:
       - key: HOST
         value: 0.0.0.0
+      - key: HOME
+        value: /tmp
+      - key: SAL_USE_VCLPLUGIN
+        value: svp
       - key: DB_PATH
         value: /var/data/orcamentos.db
+      - key: ORCAMENTOS_OUTPUT_DIR
+        value: /var/data/saida
+      - key: TEMPERATURE_MAP_OUTPUT_DIR
+        value: /var/data/saida/mapas_temperatura
+      - key: EXPORT_PATH
+        value: /var/data/orcamentos_export.csv
     disk:
       name: orcamento-data
       mountPath: /var/data
