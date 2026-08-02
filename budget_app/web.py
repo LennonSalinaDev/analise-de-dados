@@ -1081,6 +1081,29 @@ def layout(title: str, content: str, *, show_nav: bool = True) -> bytes:
     {nav_html}
   </header>
   <main>{content}</main>
+  <script>
+  (function () {{
+    const key = "clamed-scroll:" + window.location.pathname;
+    if ("scrollRestoration" in history) history.scrollRestoration = "manual";
+
+    function currentScrollTop() {{
+      return window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0;
+    }}
+
+    function saveScroll() {{
+      sessionStorage.setItem(key, String(Math.max(0, Math.round(currentScrollTop()))));
+    }}
+
+    function restoreScroll() {{
+      const saved = Number(sessionStorage.getItem(key) || 0);
+      if (saved > 0) window.scrollTo(0, saved);
+    }}
+
+    window.addEventListener("beforeunload", saveScroll);
+    document.addEventListener("submit", saveScroll, true);
+    window.addEventListener("load", () => setTimeout(restoreScroll, 0));
+  }})();
+  </script>
 </body>
 </html>"""
     return page.encode("utf-8")
