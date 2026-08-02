@@ -14,6 +14,10 @@ services:
         value: svp
       - key: DB_PATH
         value: /var/data/orcamentos.db
+      - key: APP_ADMIN_USER
+        sync: false
+      - key: APP_ADMIN_PASSWORD
+        sync: false
       - key: ORCAMENTOS_OUTPUT_DIR
         value: /var/data/saida
       - key: TEMPERATURE_MAP_OUTPUT_DIR

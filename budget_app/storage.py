@@ -145,6 +145,7 @@ def init_db() -> None:
             )
             """
         )
+        bootstrap_admin_from_env(conn)
         seed_farmaceuticos_from_history(conn)
 
 
@@ -310,6 +311,33 @@ def has_users() -> bool:
     with connect() as conn:
         row = conn.execute("SELECT 1 FROM app_users LIMIT 1").fetchone()
         return row is not None
+
+
+def bootstrap_admin_from_env(conn: sqlite3.Connection) -> None:
+    username = os.environ.get("APP_ADMIN_USER", "").strip()
+    password = os.environ.get("APP_ADMIN_PASSWORD", "")
+    if not username and not password:
+        return
+    if not username or not password:
+        raise RuntimeError("Configure APP_ADMIN_USER e APP_ADMIN_PASSWORD juntos.")
+    if len(password) < 8:
+        raise RuntimeError("APP_ADMIN_PASSWORD precisa ter pelo menos 8 caracteres.")
+
+    row = conn.execute("SELECT 1 FROM app_users LIMIT 1").fetchone()
+    if row is not None:
+        return
+
+    conn.execute(
+        """
+        INSERT INTO app_users (username, password_hash, perfil, criado_em)
+        VALUES (?, ?, 'admin', ?)
+        """,
+        (
+            username,
+            password_hash(password),
+            datetime.now().isoformat(timespec="seconds"),
+        ),
+    )
 
 
 def create_user(username: str, password: str, perfil: str = "admin") -> int:

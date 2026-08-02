@@ -124,6 +124,8 @@ O serviço usa:
 ```text
 Health Check Path: /healthz
 DB_PATH: /var/data/orcamentos.db
+APP_ADMIN_USER: definido no painel do Render
+APP_ADMIN_PASSWORD: definido no painel do Render
 ORCAMENTOS_OUTPUT_DIR: /var/data/saida
 TEMPERATURE_MAP_OUTPUT_DIR: /var/data/saida/mapas_temperatura
 EXPORT_PATH: /var/data/orcamentos_export.csv
@@ -133,6 +135,8 @@ SAL_USE_VCLPLUGIN: svp
 ```
 
 O `render.yaml` também define um disco persistente em `/var/data` para guardar o banco SQLite e os arquivos gerados. Isso é importante porque o login, os responsáveis, o histórico e os DOCX/XLSX/PDF gerados dependem desses arquivos. Sem disco persistente, esses dados podem ser perdidos em reinícios ou redeploys.
+
+Se o Render abrir `/setup` depois de um redeploy ou depois de uma tentativa de gerar arquivo, isso indica que o serviço iniciou com um banco SQLite vazio ou em outro caminho. Para evitar esse comportamento, configure `APP_ADMIN_USER` e `APP_ADMIN_PASSWORD` como variáveis secretas no painel do Render. Quando o banco estiver vazio, o app cria esse administrador automaticamente; quando já existir usuário, essas variáveis são ignoradas.
 
 Se você estiver criando manualmente como Python, o DOCX funciona, mas o PDF não terá LibreOffice instalado por padrão. Para gerar PDF na nuvem, use Docker.
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import html
 import os
 import mimetypes
+import threading
 from calendar import monthrange
 from datetime import date
 from decimal import Decimal
@@ -63,10 +64,19 @@ ASSETS_DIR = Path("assets")
 LOGO_FILENAME = "logo_preco_popular.svg"
 SESSION_COOKIE = "orcamento_session"
 SESSION_MAX_AGE = 12 * 60 * 60
+_REQUEST_CONTEXT = threading.local()
 
 
 def esc(value: object) -> str:
     return html.escape("" if value is None else str(value), quote=True)
+
+
+def set_layout_username(username: str | None) -> None:
+    _REQUEST_CONTEXT.username = username or ""
+
+
+def layout_username() -> str:
+    return getattr(_REQUEST_CONTEXT, "username", "")
 
 
 def parse_form(body: bytes) -> dict[str, list[str]]:
@@ -189,7 +199,13 @@ def ensure_docx_file(orcamento_id: int, row) -> Path:
 def layout(title: str, content: str, *, show_nav: bool = True) -> bytes:
     nav_html = ""
     if show_nav:
-        nav_html = """
+        username = layout_username()
+        user_html = (
+            f'<span class="user-badge" title="Usuário logado">{esc(username)}</span>'
+            if username
+            else ""
+        )
+        nav_html = f"""
     <input class="nav-toggle" id="nav-toggle" type="checkbox" aria-label="Abrir menu">
     <label class="nav-toggle-button" for="nav-toggle">Menu</label>
     <nav>
@@ -199,6 +215,7 @@ def layout(title: str, content: str, *, show_nav: bool = True) -> bytes:
       <a href="/farmaceuticos">Farmacêuticos</a>
       <a href="/validar-modelo">Validar modelo</a>
       <a href="/exportar">Exportar CSV</a>
+      {user_html}
       <form method="post" action="/logout">
         <button class="nav-logout" type="submit">Sair</button>
       </form>
@@ -284,6 +301,22 @@ def layout(title: str, content: str, *, show_nav: bool = True) -> bytes:
     }}
     nav form {{
       margin: 0;
+    }}
+    .user-badge {{
+      display: inline-flex;
+      align-items: center;
+      min-height: 32px;
+      padding: 6px 10px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fafcfb;
+      color: #2e4f3d;
+      font-size: 12px;
+      font-weight: 800;
+      max-width: 180px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }}
     nav a {{
       white-space: nowrap;
@@ -895,8 +928,14 @@ def layout(title: str, content: str, *, show_nav: bool = True) -> bytes:
       }}
       nav a,
       nav form,
+      .user-badge,
       .nav-logout {{
         width: 100%;
+      }}
+      .user-badge {{
+        justify-content: center;
+        max-width: none;
+        min-height: 38px;
       }}
       nav a {{
         margin: 0;
@@ -1982,7 +2021,9 @@ class Handler(BaseHTTPRequestHandler):
         return morsel.value if morsel else None
 
     def current_user(self):
-        return get_user_by_session(self.request_session_token())
+        user = get_user_by_session(self.request_session_token())
+        set_layout_username(user["username"] if user is not None else "")
+        return user
 
     def is_https(self) -> bool:
         return self.headers.get("X-Forwarded-Proto", "").lower() == "https"
@@ -2033,6 +2074,7 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self) -> None:
+        set_layout_username("")
         parsed = urlparse(self.path)
         path = parsed.path
         if path == "/healthz":
@@ -2099,6 +2141,7 @@ class Handler(BaseHTTPRequestHandler):
         return self.respond(404, layout("Erro", '<section class="error">Página não encontrada.</section>'))
 
     def do_POST(self) -> None:
+        set_layout_username("")
         path = urlparse(self.path).path
         if path == "/setup":
             return self.handle_setup()
