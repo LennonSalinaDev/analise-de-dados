@@ -17,7 +17,11 @@ from openpyxl.styles import Alignment
 from .paths import data_path
 
 
-OUTPUT_DIR = data_path("saida/mapas_temperatura", "TEMPERATURE_MAP_OUTPUT_DIR")
+OUTPUT_DIR = data_path(
+    "saida/mapas_temperatura",
+    "TEMPERATURE_MAP_OUTPUT_DIR",
+    "saida/mapas_temperatura",
+)
 INACTIVE_MARK = "****"
 
 MONTH_OPTIONS = [

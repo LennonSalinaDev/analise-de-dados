@@ -14,7 +14,7 @@ from typing import Iterable
 from .paths import data_path
 
 
-DB_PATH = data_path("orcamentos.db", "DB_PATH")
+DB_PATH = data_path("orcamentos.db", "DB_PATH", "data/orcamentos.db")
 
 
 @dataclass

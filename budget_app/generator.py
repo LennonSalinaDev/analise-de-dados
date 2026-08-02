@@ -20,8 +20,8 @@ from .storage import Item, Orcamento, iter_export_rows
 
 
 TEMPLATE_DIR = Path("modelos")
-OUTPUT_DIR = data_path("saida", "ORCAMENTOS_OUTPUT_DIR")
-EXPORT_PATH = data_path("orcamentos_export.csv", "EXPORT_PATH")
+OUTPUT_DIR = data_path("saida", "ORCAMENTOS_OUTPUT_DIR", "saida")
+EXPORT_PATH = data_path("orcamentos_export.csv", "EXPORT_PATH", "data/orcamentos_export.csv")
 
 
 MONTHS_PT_BR = [
