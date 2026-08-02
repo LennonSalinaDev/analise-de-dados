@@ -1749,7 +1749,7 @@ def temperature_maps_section(
             f'<a class="button primary" href="/mapa-temperatura/download/{quote(xlsx_path.name)}">'
             "Baixar XLSX</a>"
         )
-        if pdf_path is not None and xlsx_path.name in pdf_ready_names:
+        if pdf_path is not None:
             pdf_action = (
                 f'<a class="button warning" href="/mapa-temperatura/download/{quote(pdf_path.name)}" '
                 'target="_blank" rel="noopener">Abrir PDF</a>'
