@@ -6,7 +6,7 @@ import mimetypes
 from decimal import Decimal
 from http.cookies import SimpleCookie
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from .generator import (
@@ -42,6 +42,13 @@ from .storage import (
     list_orcamentos,
     save_orcamento,
     verify_login,
+)
+from .temperature_map import (
+    MONTH_OPTIONS,
+    convert_temperature_map_to_pdf,
+    output_file as temperature_output_file,
+    parse_temperature_map_input,
+    render_temperature_map,
 )
 
 
@@ -182,6 +189,7 @@ def layout(title: str, content: str, *, show_nav: bool = True) -> bytes:
     <label class="nav-toggle-button" for="nav-toggle">Menu</label>
     <nav>
       <a href="/">Novo orçamento</a>
+      <a href="/mapa-temperatura">Mapa temperatura</a>
       <a href="/historico">Histórico</a>
       <a href="/farmaceuticos">Farmacêuticos</a>
       <a href="/validar-modelo">Validar modelo</a>
@@ -1180,6 +1188,87 @@ def template_validation_page() -> bytes:
     return layout("Validar modelo", content)
 
 
+def month_select(data: dict[str, list[str]] | None = None) -> str:
+    current_month = str(int(today_iso()[5:7]))
+    selected = form_value(data, "mes", current_month)
+    options = []
+    for value, label in MONTH_OPTIONS:
+        value_raw = str(value)
+        options.append(
+            f'<option value="{value_raw}"{" selected" if selected == value_raw else ""}>{esc(label)}</option>'
+        )
+    return "".join(options)
+
+
+def temperature_map_form_page(
+    error: str = "",
+    data: dict[str, list[str]] | None = None,
+    field_error: str | None = None,
+) -> bytes:
+    error_html = f'<section class="error">{esc(error)}</section>' if error else ""
+    current_year = today_iso()[:4]
+    content = f"""
+{error_html}
+<form method="post" action="/mapa-temperatura" autocomplete="off">
+  <section>
+    <h2>Mapa de temperatura</h2>
+    <div class="grid">
+      <div>
+        <label for="mes">Mês</label>
+        <select id="mes" name="mes" autocomplete="off"{field_class(field_error, 'mes')}>
+          {month_select(data)}
+        </select>
+      </div>
+      <div>
+        <label for="ano">Ano</label>
+        <input id="ano" name="ano" value="{esc(form_value(data, 'ano', current_year))}" inputmode="numeric" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"{field_class(field_error, 'ano')} required>
+      </div>
+      <div>
+        <label for="filial">Filial</label>
+        <input id="filial" name="filial" value="{esc(form_value(data, 'filial'))}" inputmode="numeric" placeholder="000" maxlength="3" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"{field_class(field_error, 'filial')} required>
+      </div>
+    </div>
+  </section>
+  <section>
+    <div class="actions">
+      <button class="primary" type="submit">Gerar mapa</button>
+    </div>
+  </section>
+</form>
+"""
+    return layout("Mapa de temperatura", content)
+
+
+def temperature_map_result_page(filename: str, pdf_status: str = "") -> bytes:
+    xlsx_path = temperature_output_file(filename)
+    if xlsx_path is None or xlsx_path.suffix.lower() != ".xlsx":
+        return layout("Não encontrado", '<section class="error">Mapa de temperatura não encontrado.</section>')
+
+    pdf_name = f"{xlsx_path.stem}.pdf"
+    pdf_path = temperature_output_file(pdf_name)
+    pdf_html = ""
+    if pdf_path is not None:
+        pdf_html = (
+            f'<a class="button secondary" href="/mapa-temperatura/download/{quote(pdf_path.name)}" '
+            'target="_blank" rel="noopener">Abrir PDF</a>'
+        )
+    elif pdf_status:
+        pdf_html = f'<span class="warn">{esc(pdf_status)}</span>'
+
+    content = f"""
+<section>
+  <h2>Mapa gerado</h2>
+  <p class="ok">XLSX criado com sucesso.</p>
+  <div class="actions">
+    <a class="button primary" href="/mapa-temperatura/download/{quote(xlsx_path.name)}">Baixar XLSX</a>
+    {pdf_html}
+    <a class="button secondary" href="/mapa-temperatura">Novo mapa</a>
+  </div>
+</section>
+"""
+    return layout("Mapa gerado", content)
+
+
 class Handler(BaseHTTPRequestHandler):
     def request_session_token(self) -> str | None:
         raw_cookie = self.headers.get("Cookie")
@@ -1271,6 +1360,15 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/":
             return self.respond(200, form_page())
+        if path == "/mapa-temperatura":
+            return self.respond(200, temperature_map_form_page())
+        if path == "/mapa-temperatura/resultado":
+            query = parse_qs(parsed.query, keep_blank_values=True)
+            filename = first(query, "arquivo")
+            pdf_status = first(query, "pdf_status")
+            return self.respond(200, temperature_map_result_page(filename, pdf_status))
+        if path.startswith("/mapa-temperatura/download/"):
+            return self.handle_temperature_download(path)
         if path == "/historico":
             return self.respond(200, history_page())
         if path == "/farmaceuticos":
@@ -1308,6 +1406,8 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/farmaceuticos":
             return self.handle_add_farmaceutico()
+        if path == "/mapa-temperatura":
+            return self.handle_temperature_map()
         if path.startswith("/farmaceuticos/") and path.endswith("/excluir"):
             return self.handle_delete_farmaceutico(path)
         if path.startswith("/orcamentos/") and path.endswith("/gerar-pdf"):
@@ -1399,6 +1499,36 @@ class Handler(BaseHTTPRequestHandler):
         token = create_session(int(user["id"]))
         return self.redirect("/", {"Set-Cookie": self.session_cookie(token)})
 
+    def handle_temperature_map(self) -> None:
+        length = int(self.headers.get("Content-Length", "0"))
+        data = parse_form(self.rfile.read(length))
+        try:
+            try:
+                mapa = parse_temperature_map_input(
+                    first(data, "mes"),
+                    first(data, "ano"),
+                    first(data, "filial"),
+                )
+            except ValueError as exc:
+                message = str(exc)
+                field_error = None
+                if message.startswith("Campo Mês:"):
+                    field_error = "mes"
+                elif message.startswith("Campo Ano:"):
+                    field_error = "ano"
+                elif message.startswith("Campo Filial:"):
+                    field_error = "filial"
+                return self.respond(400, temperature_map_form_page(message, data, field_error))
+
+            xlsx_path = render_temperature_map(mapa)
+            _pdf_path, pdf_status = convert_temperature_map_to_pdf(xlsx_path)
+            return self.redirect(
+                "/mapa-temperatura/resultado"
+                f"?arquivo={quote(xlsx_path.name)}&pdf_status={quote(pdf_status)}"
+            )
+        except Exception as exc:
+            return self.respond(400, temperature_map_form_page(str(exc), data))
+
     def handle_add_farmaceutico(self) -> None:
         length = int(self.headers.get("Content-Length", "0"))
         data = parse_form(self.rfile.read(length))
@@ -1472,6 +1602,15 @@ class Handler(BaseHTTPRequestHandler):
                     Path(value).unlink(missing_ok=True)
         return self.redirect("/historico")
 
+    def handle_temperature_download(self, path: str) -> None:
+        filename = unquote(path.rsplit("/", 1)[-1])
+        file_path = temperature_output_file(filename)
+        if file_path is None or file_path.suffix.lower() not in {".xlsx", ".pdf"}:
+            return self.respond(404, layout("Erro", '<section class="error">Arquivo não encontrado.</section>'))
+        content_type = mimetypes.guess_type(file_path.name)[0] or "application/octet-stream"
+        disposition = "inline" if file_path.suffix.lower() == ".pdf" else "attachment"
+        return self.send_file(file_path, content_type, disposition=disposition)
+
     def handle_download(self, path: str) -> None:
         parts = path.strip("/").split("/")
         if len(parts) != 3:
@@ -1517,7 +1656,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", content_type)
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "same-origin")
-        if path.suffix.lower() in {".docx", ".pdf", ".csv"}:
+        if path.suffix.lower() in {".docx", ".xlsx", ".pdf", ".csv"}:
             self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Content-Disposition", f'{disposition}; filename="{path.name}"')
