@@ -149,6 +149,12 @@ LibreOffice/soffice não encontrado
 
 o serviço está rodando como Python nativo, não como Docker. Nesse caso, o `Dockerfile` está sendo ignorado. Crie um novo serviço no Render usando `New +` > `Blueprint` e selecione este repositório, ou recrie o Web Service escolhendo `Runtime: Docker` e `Dockerfile Path: ./Dockerfile`.
 
+Após corrigir o serviço, o log esperado deve mostrar:
+
+```text
+Banco de dados em: /var/data/orcamentos.db
+```
+
 Se você continuar no runtime Python nativo, no campo `Start Command` do painel do Render, digite somente:
 
 ```text

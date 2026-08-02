@@ -11,8 +11,10 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
 from typing import Iterable
 
+from .paths import data_path
 
-DB_PATH = Path(os.environ.get("DB_PATH", "data/orcamentos.db"))
+
+DB_PATH = data_path("orcamentos.db", "DB_PATH")
 
 
 @dataclass

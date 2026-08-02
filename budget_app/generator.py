@@ -15,12 +15,13 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Pt
 
+from .paths import data_path
 from .storage import Item, Orcamento, iter_export_rows
 
 
 TEMPLATE_DIR = Path("modelos")
-OUTPUT_DIR = Path(os.environ.get("ORCAMENTOS_OUTPUT_DIR", "saida"))
-EXPORT_PATH = Path(os.environ.get("EXPORT_PATH", "data/orcamentos_export.csv"))
+OUTPUT_DIR = data_path("saida", "ORCAMENTOS_OUTPUT_DIR")
+EXPORT_PATH = data_path("orcamentos_export.csv", "EXPORT_PATH")
 
 
 MONTHS_PT_BR = [
