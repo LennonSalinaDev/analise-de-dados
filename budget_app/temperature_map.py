@@ -433,6 +433,13 @@ def convert_temperature_map_to_pdf(xlsx_path: Path) -> tuple[Path | None, str]:
             return pdf_path, status
         errors.append(status)
     detail = " | ".join(errors)
+    if os.environ.get("RENDER") and "LibreOffice/soffice não encontrado" in detail:
+        return None, (
+            "PDF não gerado no Render porque o serviço atual não está usando a imagem Docker "
+            "com LibreOffice. O XLSX foi criado normalmente. No painel do Render, crie/recrie "
+            "o serviço como Docker Web Service ou aplique o Blueprint render.yaml. "
+            f"Detalhes: {compact_error_detail(detail, 1400)}"
+        )
     return None, (
         "PDF não gerado no servidor. O XLSX foi criado normalmente. "
         "Detalhes: "

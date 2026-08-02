@@ -140,6 +140,15 @@ Se o Render abrir `/setup` depois de um redeploy ou depois de uma tentativa de g
 
 Se você estiver criando manualmente como Python, o DOCX funciona, mas o PDF não terá LibreOffice instalado por padrão. Para gerar PDF na nuvem, use Docker.
 
+Se os logs mostrarem algo como:
+
+```text
+Banco de dados em: /opt/render/project/src/data/orcamentos.db
+LibreOffice/soffice não encontrado
+```
+
+o serviço está rodando como Python nativo, não como Docker. Nesse caso, o `Dockerfile` está sendo ignorado. Crie um novo serviço no Render usando `New +` > `Blueprint` e selecione este repositório, ou recrie o Web Service escolhendo `Runtime: Docker` e `Dockerfile Path: ./Dockerfile`.
+
 Se você continuar no runtime Python nativo, no campo `Start Command` do painel do Render, digite somente:
 
 ```text
