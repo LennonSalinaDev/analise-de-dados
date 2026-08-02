@@ -35,6 +35,7 @@ MONTH_NAMES = {month: name for month, name in MONTH_OPTIONS}
 MAP_TYPE_OPTIONS = [
     ("geral", "Mapa Temperatura - Geral"),
     ("geladeira", "Mapa Temperatura - Geladeira"),
+    ("controlados", "Mapa Temperatura - Controlados"),
 ]
 MAP_TYPES = {
     "geral": {
@@ -53,6 +54,18 @@ MAP_TYPES = {
         "label": "Mapa Temperatura - Geladeira",
         "slug": "geladeira",
         "template_path": Path("modelos/mapa_temperatura/modelo_mapa_temperatura_geladeira.xlsx"),
+        "month_cell": "M7",
+        "year_cell": "R7",
+        "branch_cell": "U7",
+        "first_day_row": 10,
+        "last_day_row": 40,
+        "first_variant_column": 2,
+        "last_variant_column": 21,
+    },
+    "controlados": {
+        "label": "Mapa Temperatura - Controlados",
+        "slug": "controlados",
+        "template_path": Path("modelos/mapa_temperatura/modelo_mapa_temperatura_controlados.xlsx"),
         "month_cell": "M7",
         "year_cell": "R7",
         "branch_cell": "U7",
@@ -144,7 +157,7 @@ def parse_temperature_map_input(
 def parse_map_types(values: list[str] | None) -> list[str]:
     selected = [value.strip() for value in values or [] if value.strip()]
     if not selected:
-        raise ValueError("Campo Modelo: selecione pelo menos um mapa.")
+        raise ValueError("Selecione pelo menos um mapa.")
     invalid = [value for value in selected if value not in MAP_TYPES]
     if invalid:
         raise ValueError("Campo Modelo: selecione apenas mapas válidos.")

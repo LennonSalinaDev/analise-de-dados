@@ -1745,17 +1745,16 @@ def temperature_maps_section(
     rows = []
     for xlsx_path in maps:
         pdf_path = temperature_output_file(f"{xlsx_path.stem}.pdf")
+        main_action = (
+            f'<a class="button primary" href="/mapa-temperatura/download/{quote(xlsx_path.name)}">'
+            "Baixar XLSX</a>"
+        )
         if pdf_path is not None and xlsx_path.name in pdf_ready_names:
-            main_action = (
+            pdf_action = (
                 f'<a class="button warning" href="/mapa-temperatura/download/{quote(pdf_path.name)}" '
                 'target="_blank" rel="noopener">Abrir PDF</a>'
             )
-            pdf_action = ""
         else:
-            main_action = (
-                f'<a class="button primary" href="/mapa-temperatura/download/{quote(xlsx_path.name)}">'
-                "Baixar XLSX</a>"
-            )
             pdf_action = f"""
               <form method="post" action="/mapa-temperatura/pdf/{quote(xlsx_path.name)}">
                 <button class="info pdf-generate" type="submit" data-loading-label="PDF...">PDF</button>
