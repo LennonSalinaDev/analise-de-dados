@@ -309,6 +309,7 @@ def token_hash(token: str) -> str:
 
 def has_users() -> bool:
     with connect() as conn:
+        bootstrap_admin_from_env(conn)
         row = conn.execute("SELECT 1 FROM app_users LIMIT 1").fetchone()
         return row is not None
 

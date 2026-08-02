@@ -45,6 +45,7 @@ from .storage import (
     list_orcamentos,
     save_orcamento,
     verify_login,
+    DB_PATH,
 )
 from .temperature_map import (
     MAP_TYPE_OPTIONS,
@@ -2460,6 +2461,7 @@ class Handler(BaseHTTPRequestHandler):
 
 def run() -> None:
     init_db()
+    print(f"Banco de dados em: {DB_PATH.resolve()}")
     preferred_port = int(os.environ.get("PORT", PORT))
     server = None
     selected_port = preferred_port
