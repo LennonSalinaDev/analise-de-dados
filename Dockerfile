@@ -12,6 +12,8 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         default-jre-headless \
         fontconfig \
+        fonts-crosextra-caladea \
+        fonts-crosextra-carlito \
         fonts-dejavu \
         fonts-liberation \
         fonts-noto-core \

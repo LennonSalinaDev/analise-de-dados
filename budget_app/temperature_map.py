@@ -234,6 +234,42 @@ def count_openpyxl_images(workbook) -> int:
     return total
 
 
+def summarize_dimensions(worksheet, config: dict[str, object]) -> str:
+    rows = []
+    for row in range(1, int(config["last_day_row"]) + 1):
+        height = worksheet.row_dimensions[row].height
+        if height is not None:
+            rows.append(f"{row}:{height:g}")
+    cols = []
+    for col, dimension in sorted(worksheet.column_dimensions.items()):
+        if dimension.width is not None:
+            cols.append(f"{col}:{dimension.width:g}")
+    return (
+        f"default_row_height={worksheet.sheet_format.defaultRowHeight} "
+        f"rows={';'.join(rows) or 'sem_alturas_customizadas'} "
+        f"cols={';'.join(cols) or 'sem_larguras_customizadas'}"
+    )
+
+
+def log_print_setup(worksheet, label: str) -> None:
+    setup = worksheet.page_setup
+    margins = worksheet.page_margins
+    log_temperature_map(
+        f"{label}: orientation={setup.orientation} paperSize={setup.paperSize} "
+        f"scale={setup.scale} fitToWidth={setup.fitToWidth} fitToHeight={setup.fitToHeight} "
+        f"margins=(left={margins.left}, right={margins.right}, top={margins.top}, bottom={margins.bottom})"
+    )
+
+
+def lock_temperature_layout(worksheet, config: dict[str, object]) -> None:
+    default_height = worksheet.sheet_format.defaultRowHeight or 15
+    last_row = int(config["last_day_row"])
+    for row in range(1, last_row + 1):
+        dimension = worksheet.row_dimensions[row]
+        dimension.height = dimension.height or default_height
+    log_temperature_map(f"layout fixado: {summarize_dimensions(worksheet, config)}")
+
+
 def inactive_temperature_days(data: TemperatureMapInput) -> set[int]:
     days_in_month = monthrange(data.ano, data.mes)[1]
     inactive_days = set(data.dias_extras)
@@ -287,12 +323,16 @@ def render_temperature_map(data: TemperatureMapInput, map_type: str = "geral") -
     workbook = load_workbook(template_path)
     log_temperature_map(f"imagens carregadas pelo openpyxl={count_openpyxl_images(workbook)}")
     worksheet = workbook.active
+    log_temperature_map(f"layout modelo: {summarize_dimensions(worksheet, config)}")
+    log_print_setup(worksheet, "impressão modelo")
     worksheet[config["month_cell"]] = data.mes_nome
     worksheet[config["year_cell"]] = data.ano
     worksheet[config["branch_cell"]] = int(data.filial)
     worksheet[config["branch_cell"]].number_format = "000"
     center_cell(worksheet[config["branch_cell"]])
     fill_inactive_temperature_rows(worksheet, data, map_type)
+    lock_temperature_layout(worksheet, config)
+    log_print_setup(worksheet, "impressão antes de salvar")
 
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     nonce = secrets.token_hex(3)
@@ -407,13 +447,27 @@ def compact_error_detail(value: str, limit: int = 1200) -> str:
     return text[: limit - 3] + "..."
 
 
+def soffice_version(soffice: str) -> str:
+    try:
+        result = subprocess.run(
+            [soffice, "--version"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+    except Exception as exc:
+        return f"erro ao consultar versão: {exc}"
+    return compact_error_detail(result.stdout or result.stderr, 300)
+
+
 def convert_xlsx_to_pdf_with_libreoffice(xlsx_path: Path) -> tuple[Path | None, str]:
     log_temperature_map(f"pdf libreoffice: início arquivo={xlsx_path.name}")
     soffice = find_soffice()
     if not soffice:
         log_temperature_map("pdf libreoffice: soffice não encontrado")
         return None, "LibreOffice/soffice não encontrado."
-    log_temperature_map(f"pdf libreoffice: soffice={soffice}")
+    log_temperature_map(f"pdf libreoffice: soffice={soffice} versão={soffice_version(soffice)}")
 
     source_path = xlsx_path.resolve()
     output_dir = xlsx_path.parent.resolve()
