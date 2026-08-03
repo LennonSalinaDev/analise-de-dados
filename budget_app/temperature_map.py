@@ -13,7 +13,6 @@ from pathlib import Path
 
 from openpyxl import load_workbook
 from openpyxl.styles import Alignment
-
 from .paths import data_path
 
 

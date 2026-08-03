@@ -547,8 +547,8 @@ def layout(title: str, content: str, *, show_nav: bool = True) -> bytes:
     }}
     .temperature-history th:last-child,
     .temperature-history td:last-child {{
-      width: 330px;
-      max-width: 330px;
+      width: 405px;
+      max-width: 405px;
     }}
     .row-actions {{
       padding-left: 6px;
@@ -579,6 +579,7 @@ def layout(title: str, content: str, *, show_nav: bool = True) -> bytes:
     .success-title {{ color: var(--ok); }}
     .pdf-status {{
       position: relative;
+      flex: 0 0 auto;
       width: 30px;
       min-height: 30px;
       padding: 0;
@@ -588,13 +589,29 @@ def layout(title: str, content: str, *, show_nav: bool = True) -> bytes:
       color: var(--warn);
       font-weight: 900;
     }}
+    .pdf-status[open] .popover {{
+      display: block;
+    }}
+    .pdf-status summary {{
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      min-height: 28px;
+      cursor: pointer;
+      list-style: none;
+      user-select: none;
+    }}
+    .pdf-status summary::-webkit-details-marker {{
+      display: none;
+    }}
     .pdf-status .popover {{
       display: none;
       position: absolute;
       right: 0;
       bottom: calc(100% + 8px);
       z-index: 10;
-      width: min(320px, calc(100vw - 40px));
+      width: min(440px, calc(100vw - 40px));
       padding: 10px 12px;
       border: 1px solid #e5bf72;
       border-radius: 6px;
@@ -608,10 +625,17 @@ def layout(title: str, content: str, *, show_nav: bool = True) -> bytes:
       overflow-wrap: anywhere;
       text-align: left;
     }}
-    .pdf-status:hover .popover,
-    .pdf-status:focus .popover,
-    .pdf-status:focus-within .popover {{
-      display: block;
+    .pdf-status textarea {{
+      width: 100%;
+      min-height: 128px;
+      resize: vertical;
+      border: 1px solid #e5bf72;
+      border-radius: 6px;
+      padding: 8px;
+      background: #fff;
+      color: #3f3100;
+      font: 12px/1.35 Consolas, "Courier New", monospace;
+      white-space: pre-wrap;
     }}
     .spinner-border {{
       display: inline-block;
@@ -1973,8 +1997,11 @@ def temperature_maps_section(
             """
             if xlsx_path.name in generated_names and pdf_status:
                 pdf_action += (
-                    f'<button class="pdf-status" type="button" aria-label="{esc(pdf_status)}">'
-                    f'!<span class="popover">{esc(pdf_status)}</span></button>'
+                    f'<details class="pdf-status">'
+                    f'<summary aria-label="Erro do PDF">!</summary>'
+                    f'<span class="popover">'
+                    f'<textarea readonly onclick="this.select()">{esc(pdf_status)}</textarea>'
+                    f'</span></details>'
                 )
         row_class = ' class="highlight-row"' if xlsx_path.name in generated_names else ""
         rows.append(
