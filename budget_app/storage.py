@@ -366,11 +366,14 @@ def setup_screen_allowed() -> bool:
 
 def auth_diagnostics() -> dict[str, object]:
     parent = DB_PATH.parent
+    db_stat = DB_PATH.stat() if DB_PATH.exists() else None
     diagnostics: dict[str, object] = {
         "render": bool(os.environ.get("RENDER")),
         "db_path": str(DB_PATH.resolve()),
         "db_exists": DB_PATH.exists(),
-        "db_size": DB_PATH.stat().st_size if DB_PATH.exists() else 0,
+        "db_size": db_stat.st_size if db_stat else 0,
+        "db_mtime": datetime.fromtimestamp(db_stat.st_mtime).isoformat(timespec="seconds") if db_stat else "",
+        "db_inode": getattr(db_stat, "st_ino", "") if db_stat else "",
         "db_parent": str(parent.resolve()),
         "db_parent_exists": parent.exists(),
         "db_parent_writable": parent.exists() and os.access(parent, os.W_OK),
@@ -408,6 +411,8 @@ def log_auth_diagnostics(context: str) -> None:
         f"db_path={data.get('db_path')}",
         f"db_exists={data.get('db_exists')}",
         f"db_size={data.get('db_size')}",
+        f"db_mtime={data.get('db_mtime')}",
+        f"db_inode={data.get('db_inode')}",
         f"db_parent_exists={data.get('db_parent_exists')}",
         f"db_parent_writable={data.get('db_parent_writable')}",
         f"db_path_env_set={data.get('db_path_env_set')}",

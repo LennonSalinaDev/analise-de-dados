@@ -3,7 +3,9 @@ from __future__ import annotations
 import html
 import os
 import mimetypes
+import secrets
 import threading
+import time
 from calendar import monthrange
 from datetime import date
 from decimal import Decimal
@@ -69,6 +71,8 @@ LOGO_FILENAME = "logo_preco_popular.svg"
 SESSION_COOKIE = "orcamento_session"
 SESSION_MAX_AGE = 12 * 60 * 60
 _REQUEST_CONTEXT = threading.local()
+APP_BOOT_ID = secrets.token_hex(4)
+APP_BOOT_TIME = time.time()
 
 
 def esc(value: object) -> str:
@@ -85,6 +89,10 @@ def layout_username() -> str:
 
 def short_token(token: str | None) -> str:
     return token_hash(token)[:10] if token else "none"
+
+
+def runtime_marker() -> str:
+    return f"boot={APP_BOOT_ID} pid={os.getpid()} uptime={int(time.time() - APP_BOOT_TIME)}s"
 
 
 def parse_form(body: bytes) -> dict[str, list[str]]:
@@ -2097,7 +2105,7 @@ class Handler(BaseHTTPRequestHandler):
         user = get_user_by_session(token)
         set_layout_username(user["username"] if user is not None else "")
         print(
-            f"[request] current_user path={urlparse(self.path).path} "
+            f"[request] {runtime_marker()} current_user path={urlparse(self.path).path} "
             f"session={short_token(token)} user_id={user['id'] if user is not None else 'none'}",
             flush=True,
         )
@@ -2145,7 +2153,7 @@ class Handler(BaseHTTPRequestHandler):
     def redirect(self, path: str, extra_headers: dict[str, str] | None = None) -> None:
         set_cookie = bool(extra_headers and "Set-Cookie" in extra_headers)
         print(
-            f"[request] redirect from={urlparse(self.path).path} to={path} "
+            f"[request] {runtime_marker()} redirect from={urlparse(self.path).path} to={path} "
             f"session={short_token(self.request_session_token())} set_cookie={set_cookie}",
             flush=True,
         )
@@ -2173,7 +2181,7 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
         print(
-            f"[request] GET path={path} session={short_token(self.request_session_token())}",
+            f"[request] {runtime_marker()} GET path={path} session={short_token(self.request_session_token())}",
             flush=True,
         )
         if path == "/healthz":
@@ -2252,7 +2260,7 @@ class Handler(BaseHTTPRequestHandler):
         set_layout_username("")
         path = urlparse(self.path).path
         print(
-            f"[request] POST path={path} session={short_token(self.request_session_token())}",
+            f"[request] {runtime_marker()} POST path={path} session={short_token(self.request_session_token())}",
             flush=True,
         )
         if path == "/setup":
@@ -2377,7 +2385,7 @@ class Handler(BaseHTTPRequestHandler):
         return self.redirect("/", {"Set-Cookie": self.session_cookie(token)})
 
     def handle_temperature_map(self) -> None:
-        log_auth_diagnostics("POST /mapa-temperatura antes de ler formulário")
+        log_auth_diagnostics(f"{runtime_marker()} POST /mapa-temperatura antes de ler formulário")
         length = int(self.headers.get("Content-Length", "0"))
         data = parse_form(self.rfile.read(length))
         try:
@@ -2405,16 +2413,16 @@ class Handler(BaseHTTPRequestHandler):
 
             generated_names = []
             for map_type in map_types:
-                log_auth_diagnostics(f"POST /mapa-temperatura antes gerar tipo={map_type}")
+                log_auth_diagnostics(f"{runtime_marker()} POST /mapa-temperatura antes gerar tipo={map_type}")
                 xlsx_path = render_temperature_map(mapa, map_type)
                 generated_names.append(xlsx_path.name)
-                log_auth_diagnostics(f"POST /mapa-temperatura depois gerar tipo={map_type}")
+                log_auth_diagnostics(f"{runtime_marker()} POST /mapa-temperatura depois gerar tipo={map_type}")
             query_parts = [f"arquivo={quote(name)}" for name in generated_names]
             destination = "/mapa-temperatura?" + "&".join(query_parts)
-            log_auth_diagnostics(f"POST /mapa-temperatura antes redirect destino={destination}")
+            log_auth_diagnostics(f"{runtime_marker()} POST /mapa-temperatura antes redirect destino={destination}")
             return self.redirect(destination)
         except Exception as exc:
-            log_auth_diagnostics(f"POST /mapa-temperatura erro={exc}")
+            log_auth_diagnostics(f"{runtime_marker()} POST /mapa-temperatura erro={exc}")
             return self.respond(400, temperature_map_form_page(str(exc), data))
 
     def handle_add_farmaceutico(self) -> None:
@@ -2592,13 +2600,14 @@ class Handler(BaseHTTPRequestHandler):
 def run() -> None:
     init_db()
     print(f"Banco de dados em: {DB_PATH.resolve()}")
+    print(f"[runtime] {runtime_marker()} iniciado", flush=True)
     if os.environ.get("RENDER") and not os.environ.get("DB_PATH"):
         print(
             "[auth] alerta=DB_PATH não definido no Render; o app está usando armazenamento interno da imagem. "
             "Configure DB_PATH=/var/data/orcamentos.db e disco persistente em /var/data.",
             flush=True,
         )
-    log_auth_diagnostics("startup")
+    log_auth_diagnostics(f"{runtime_marker()} startup")
     preferred_port = int(os.environ.get("PORT", PORT))
     server = None
     selected_port = preferred_port
