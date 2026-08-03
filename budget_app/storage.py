@@ -17,6 +17,7 @@ from .paths import data_path
 
 DB_PATH = data_path("orcamentos.db", "DB_PATH", "data/orcamentos.db")
 SETUP_LOCK_PATH = data_path("setup.lock", "SETUP_LOCK_PATH", "data/setup.lock")
+_SETUP_COMPLETED_IN_PROCESS = False
 
 
 @dataclass
@@ -312,9 +313,9 @@ def token_hash(token: str) -> str:
 
 
 def mark_setup_completed() -> None:
+    global _SETUP_COMPLETED_IN_PROCESS
+    _SETUP_COMPLETED_IN_PROCESS = True
     SETUP_LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
-    if SETUP_LOCK_PATH.exists():
-        return
     payload = {
         "setup_completed": True,
         "created_at": datetime.now().isoformat(timespec="seconds"),
@@ -324,13 +325,19 @@ def mark_setup_completed() -> None:
 
 
 def setup_completed() -> bool:
+    global _SETUP_COMPLETED_IN_PROCESS
+    if _SETUP_COMPLETED_IN_PROCESS:
+        return True
     if not SETUP_LOCK_PATH.exists():
         return False
     try:
         payload = json.loads(SETUP_LOCK_PATH.read_text(encoding="utf-8"))
     except Exception:
         return not os.environ.get("RENDER")
-    return bool(payload.get("setup_completed"))
+    completed = bool(payload.get("setup_completed"))
+    if completed:
+        _SETUP_COMPLETED_IN_PROCESS = True
+    return completed
 
 
 def has_users() -> bool:

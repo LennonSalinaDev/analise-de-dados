@@ -2152,6 +2152,9 @@ class Handler(BaseHTTPRequestHandler):
             log_auth_diagnostics(f"{context} nenhum usuário encontrado")
         return users_exist
 
+    def should_redirect_to_setup(self) -> bool:
+        return not setup_completed() and self.request_session_token() is None
+
     def do_GET(self) -> None:
         set_layout_username("")
         parsed = urlparse(self.path)
@@ -2174,7 +2177,7 @@ class Handler(BaseHTTPRequestHandler):
             users_exist = self.users_state("GET /login")
             if users_exist is None:
                 return
-            if not users_exist and not setup_completed():
+            if not users_exist and self.should_redirect_to_setup():
                 return self.redirect("/setup")
             if not users_exist:
                 return self.respond(
@@ -2193,7 +2196,7 @@ class Handler(BaseHTTPRequestHandler):
         users_exist = self.users_state(f"GET {path}")
         if users_exist is None:
             return
-        if not users_exist and not setup_completed():
+        if not users_exist and self.should_redirect_to_setup():
             return self.redirect("/setup")
         if not users_exist:
             return self.redirect("/login")
@@ -2253,7 +2256,7 @@ class Handler(BaseHTTPRequestHandler):
         users_exist = self.users_state(f"POST {path}")
         if users_exist is None:
             return
-        if not users_exist and not setup_completed():
+        if not users_exist and self.should_redirect_to_setup():
             return self.redirect("/setup")
         if not users_exist:
             return self.redirect("/login")
@@ -2347,6 +2350,7 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError("As senhas não conferem.")
             user_id = create_user(username, password)
             token = create_session(user_id)
+            log_auth_diagnostics("POST /setup usuário criado")
         except Exception as exc:
             return self.respond(400, setup_page(str(exc)))
         return self.redirect("/", {"Set-Cookie": self.session_cookie(token)})
