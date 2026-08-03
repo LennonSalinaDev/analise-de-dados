@@ -15,6 +15,7 @@ from .paths import data_path
 
 
 DB_PATH = data_path("orcamentos.db", "DB_PATH", "data/orcamentos.db")
+SETUP_LOCK_PATH = data_path("setup.lock", "SETUP_LOCK_PATH", "data/setup.lock")
 
 
 @dataclass
@@ -309,24 +310,43 @@ def token_hash(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
+def mark_setup_completed() -> None:
+    SETUP_LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
+    if SETUP_LOCK_PATH.exists():
+        return
+    SETUP_LOCK_PATH.write_text(datetime.now().isoformat(timespec="seconds"), encoding="utf-8")
+
+
+def setup_completed() -> bool:
+    return SETUP_LOCK_PATH.exists()
+
+
 def has_users() -> bool:
     with connect() as conn:
         bootstrap_admin_from_env(conn)
         row = conn.execute("SELECT 1 FROM app_users LIMIT 1").fetchone()
-        return row is not None
+        users_exist = row is not None
+        if users_exist:
+            mark_setup_completed()
+        return users_exist
 
 
 def count_users() -> int:
     with connect() as conn:
         bootstrap_admin_from_env(conn)
         row = conn.execute("SELECT COUNT(*) AS total FROM app_users").fetchone()
-        return int(row["total"] if row is not None else 0)
+        total = int(row["total"] if row is not None else 0)
+        if total > 0:
+            mark_setup_completed()
+        return total
 
 
 def setup_screen_allowed() -> bool:
     if not os.environ.get("RENDER"):
         return True
-    return os.environ.get("ALLOW_RENDER_SETUP") == "1"
+    if os.environ.get("ALLOW_RENDER_SETUP") == "1":
+        return True
+    return not setup_completed()
 
 
 def auth_diagnostics() -> dict[str, object]:
@@ -340,6 +360,8 @@ def auth_diagnostics() -> dict[str, object]:
         "db_parent_exists": parent.exists(),
         "db_parent_writable": parent.exists() and os.access(parent, os.W_OK),
         "db_path_env_set": bool(os.environ.get("DB_PATH")),
+        "setup_lock_path": str(SETUP_LOCK_PATH.resolve()),
+        "setup_lock_exists": setup_completed(),
         "app_admin_user_set": bool(os.environ.get("APP_ADMIN_USER", "").strip()),
         "app_admin_password_set": bool(os.environ.get("APP_ADMIN_PASSWORD", "")),
         "render_setup_allowed": setup_screen_allowed(),
@@ -362,6 +384,8 @@ def log_auth_diagnostics(context: str) -> None:
         f"db_parent_exists={data.get('db_parent_exists')}",
         f"db_parent_writable={data.get('db_parent_writable')}",
         f"db_path_env_set={data.get('db_path_env_set')}",
+        f"setup_lock_path={data.get('setup_lock_path')}",
+        f"setup_lock_exists={data.get('setup_lock_exists')}",
         f"app_admin_user_set={data.get('app_admin_user_set')}",
         f"app_admin_password_set={data.get('app_admin_password_set')}",
         f"render_setup_allowed={data.get('render_setup_allowed')}",
@@ -397,6 +421,7 @@ def bootstrap_admin_from_env(conn: sqlite3.Connection) -> None:
             datetime.now().isoformat(timespec="seconds"),
         ),
     )
+    mark_setup_completed()
 
 
 def create_user(username: str, password: str, perfil: str = "admin") -> int:
@@ -421,6 +446,7 @@ def create_user(username: str, password: str, perfil: str = "admin") -> int:
             )
         except sqlite3.IntegrityError as exc:
             raise ValueError("Este usuário já existe.") from exc
+        mark_setup_completed()
         return int(cur.lastrowid)
 
 

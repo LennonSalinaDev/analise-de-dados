@@ -1237,8 +1237,8 @@ def configuration_error_page(detail: str = "") -> bytes:
     <img class="brand-logo" src="/assets/{LOGO_FILENAME}" alt="Preço Popular">
     <h2>Configuração necessária</h2>
     <p class="muted">
-      O app está no Render e não encontrou usuário cadastrado no banco atual.
-      Para evitar perda de acesso, a tela de setup fica bloqueada em produção.
+      O app está no Render, já passou pelo primeiro setup neste ambiente e agora
+      não encontrou usuário cadastrado no banco atual.
     </p>
     {detail_html}
     <div class="table-wrap">
@@ -1248,6 +1248,7 @@ def configuration_error_page(detail: str = "") -> bytes:
           <tr><th>Banco existe</th><td>{esc(diagnostics.get("db_exists"))}</td></tr>
           <tr><th>Pasta gravável</th><td>{esc(diagnostics.get("db_parent_writable"))}</td></tr>
           <tr><th>DB_PATH definido</th><td>{esc(diagnostics.get("db_path_env_set"))}</td></tr>
+          <tr><th>Setup já feito</th><td>{esc(diagnostics.get("setup_lock_exists"))}</td></tr>
           <tr><th>APP_ADMIN_USER definido</th><td>{esc(diagnostics.get("app_admin_user_set"))}</td></tr>
           <tr><th>APP_ADMIN_PASSWORD definido</th><td>{esc(diagnostics.get("app_admin_password_set"))}</td></tr>
           <tr><th>Usuários encontrados</th><td>{esc(diagnostics.get("users", "erro"))}</td></tr>
@@ -1255,8 +1256,8 @@ def configuration_error_page(detail: str = "") -> bytes:
       </table>
     </div>
     <p class="muted">
-      Corrija as variáveis do Render e o disco persistente. Para liberar setup manual
-      temporariamente no Render, defina ALLOW_RENDER_SETUP=1.
+      Corrija o caminho do banco/disco persistente. Para liberar setup manual
+      temporariamente no Render, defina ALLOW_RENDER_SETUP=1 e remova depois.
     </p>
   </section>
 </div>
@@ -2154,7 +2155,7 @@ class Handler(BaseHTTPRequestHandler):
                     500,
                     configuration_error_page(
                         "Nenhum usuário foi encontrado no banco atual. "
-                        "No Render, configure APP_ADMIN_USER, APP_ADMIN_PASSWORD e disco persistente."
+                        "Como o setup já foi concluído antes, confira DB_PATH e o disco persistente."
                     ),
                 )
                 return None
