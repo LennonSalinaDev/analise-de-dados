@@ -46,7 +46,6 @@ from .storage import (
     list_orcamentos,
     log_auth_diagnostics,
     save_orcamento,
-    setup_completed,
     verify_login,
     DB_PATH,
 )
@@ -2152,9 +2151,6 @@ class Handler(BaseHTTPRequestHandler):
             log_auth_diagnostics(f"{context} nenhum usuário encontrado")
         return users_exist
 
-    def should_redirect_to_setup(self) -> bool:
-        return not setup_completed() and self.request_session_token() is None
-
     def do_GET(self) -> None:
         set_layout_username("")
         parsed = urlparse(self.path)
@@ -2177,16 +2173,8 @@ class Handler(BaseHTTPRequestHandler):
             users_exist = self.users_state("GET /login")
             if users_exist is None:
                 return
-            if not users_exist and self.should_redirect_to_setup():
-                return self.redirect("/setup")
             if not users_exist:
-                return self.respond(
-                    200,
-                    login_page(
-                        "Nenhum usuário foi encontrado no banco atual. "
-                        "Confira o disco persistente/DB_PATH antes de recriar o acesso."
-                    ),
-                )
+                return self.redirect("/setup")
             if self.current_user() is not None:
                 return self.redirect("/")
             return self.respond(200, login_page())
@@ -2196,10 +2184,8 @@ class Handler(BaseHTTPRequestHandler):
         users_exist = self.users_state(f"GET {path}")
         if users_exist is None:
             return
-        if not users_exist and self.should_redirect_to_setup():
-            return self.redirect("/setup")
         if not users_exist:
-            return self.redirect("/login")
+            return self.redirect("/setup")
         if self.current_user() is None:
             return self.redirect("/login")
 
@@ -2256,10 +2242,8 @@ class Handler(BaseHTTPRequestHandler):
         users_exist = self.users_state(f"POST {path}")
         if users_exist is None:
             return
-        if not users_exist and self.should_redirect_to_setup():
-            return self.redirect("/setup")
         if not users_exist:
-            return self.redirect("/login")
+            return self.redirect("/setup")
         if self.current_user() is None:
             return self.redirect("/login")
 
