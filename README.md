@@ -147,6 +147,8 @@ O `render.yaml` também define um disco persistente em `/var/data` para guardar 
 
 Se o Render abrir `/setup` depois de um redeploy ou depois de uma tentativa de gerar arquivo, isso indica que o serviço iniciou com um banco SQLite vazio ou em outro caminho. Para evitar esse comportamento, configure `APP_ADMIN_USER` e `APP_ADMIN_PASSWORD` como variáveis secretas no painel do Render. Quando o banco estiver vazio, o app cria esse administrador automaticamente; quando já existir usuário, essas variáveis são ignoradas.
 
+Por segurança, em ambiente Render a tela `/setup` fica bloqueada quando não há usuários e `ALLOW_RENDER_SETUP` não está definido como `1`. Assim, se o banco desaparecer ou o serviço apontar para outro caminho, o app mostra uma tela de diagnóstico em vez de criar um novo acesso do zero. Nos logs, procure linhas iniciadas por `[auth]`; elas mostram o caminho do banco, se `DB_PATH` está definido, se a pasta é gravável e quantos usuários foram encontrados, sem expor senha.
+
 Se você estiver criando manualmente como Python, o DOCX/XLSX funciona, mas o PDF não terá LibreOffice instalado por padrão. Para gerar PDF na nuvem, use Docker. Nesse modo Python nativo, só configure `DB_PATH=/var/data/orcamentos.db` se você realmente tiver um disco persistente montado em `/var/data`; caso contrário, o serviço não terá permissão para criar essa pasta.
 
 Se os logs mostrarem algo como:

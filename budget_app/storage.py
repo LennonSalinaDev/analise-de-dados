@@ -316,6 +316,62 @@ def has_users() -> bool:
         return row is not None
 
 
+def count_users() -> int:
+    with connect() as conn:
+        bootstrap_admin_from_env(conn)
+        row = conn.execute("SELECT COUNT(*) AS total FROM app_users").fetchone()
+        return int(row["total"] if row is not None else 0)
+
+
+def setup_screen_allowed() -> bool:
+    if not os.environ.get("RENDER"):
+        return True
+    return os.environ.get("ALLOW_RENDER_SETUP") == "1"
+
+
+def auth_diagnostics() -> dict[str, object]:
+    parent = DB_PATH.parent
+    diagnostics: dict[str, object] = {
+        "render": bool(os.environ.get("RENDER")),
+        "db_path": str(DB_PATH.resolve()),
+        "db_exists": DB_PATH.exists(),
+        "db_size": DB_PATH.stat().st_size if DB_PATH.exists() else 0,
+        "db_parent": str(parent.resolve()),
+        "db_parent_exists": parent.exists(),
+        "db_parent_writable": parent.exists() and os.access(parent, os.W_OK),
+        "db_path_env_set": bool(os.environ.get("DB_PATH")),
+        "app_admin_user_set": bool(os.environ.get("APP_ADMIN_USER", "").strip()),
+        "app_admin_password_set": bool(os.environ.get("APP_ADMIN_PASSWORD", "")),
+        "render_setup_allowed": setup_screen_allowed(),
+    }
+    try:
+        diagnostics["users"] = count_users()
+    except Exception as exc:
+        diagnostics["users_error"] = str(exc)
+    return diagnostics
+
+
+def log_auth_diagnostics(context: str) -> None:
+    data = auth_diagnostics()
+    parts = [
+        f"context={context}",
+        f"render={data.get('render')}",
+        f"db_path={data.get('db_path')}",
+        f"db_exists={data.get('db_exists')}",
+        f"db_size={data.get('db_size')}",
+        f"db_parent_exists={data.get('db_parent_exists')}",
+        f"db_parent_writable={data.get('db_parent_writable')}",
+        f"db_path_env_set={data.get('db_path_env_set')}",
+        f"app_admin_user_set={data.get('app_admin_user_set')}",
+        f"app_admin_password_set={data.get('app_admin_password_set')}",
+        f"render_setup_allowed={data.get('render_setup_allowed')}",
+        f"users={data.get('users', 'erro')}",
+    ]
+    if data.get("users_error"):
+        parts.append(f"users_error={data['users_error']}")
+    print("[auth] " + " ".join(parts), flush=True)
+
+
 def bootstrap_admin_from_env(conn: sqlite3.Connection) -> None:
     username = os.environ.get("APP_ADMIN_USER", "").strip()
     password = os.environ.get("APP_ADMIN_PASSWORD", "")

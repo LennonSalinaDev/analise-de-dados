@@ -30,6 +30,7 @@ from .storage import (
     Item,
     Orcamento,
     add_farmaceutico,
+    auth_diagnostics,
     connect,
     create_session,
     create_user,
@@ -43,7 +44,9 @@ from .storage import (
     init_db,
     list_farmaceuticos,
     list_orcamentos,
+    log_auth_diagnostics,
     save_orcamento,
+    setup_screen_allowed,
     verify_login,
     DB_PATH,
 )
@@ -1225,6 +1228,42 @@ def setup_page(error: str = "") -> bytes:
     return layout("Criar acesso", content, show_nav=False)
 
 
+def configuration_error_page(detail: str = "") -> bytes:
+    diagnostics = auth_diagnostics()
+    detail_html = f'<section class="error">{esc(detail)}</section>' if detail else ""
+    content = f"""
+<div class="auth-shell">
+  <section class="auth-card">
+    <img class="brand-logo" src="/assets/{LOGO_FILENAME}" alt="Preço Popular">
+    <h2>Configuração necessária</h2>
+    <p class="muted">
+      O app está no Render e não encontrou usuário cadastrado no banco atual.
+      Para evitar perda de acesso, a tela de setup fica bloqueada em produção.
+    </p>
+    {detail_html}
+    <div class="table-wrap">
+      <table>
+        <tbody>
+          <tr><th>Banco</th><td>{esc(diagnostics.get("db_path"))}</td></tr>
+          <tr><th>Banco existe</th><td>{esc(diagnostics.get("db_exists"))}</td></tr>
+          <tr><th>Pasta gravável</th><td>{esc(diagnostics.get("db_parent_writable"))}</td></tr>
+          <tr><th>DB_PATH definido</th><td>{esc(diagnostics.get("db_path_env_set"))}</td></tr>
+          <tr><th>APP_ADMIN_USER definido</th><td>{esc(diagnostics.get("app_admin_user_set"))}</td></tr>
+          <tr><th>APP_ADMIN_PASSWORD definido</th><td>{esc(diagnostics.get("app_admin_password_set"))}</td></tr>
+          <tr><th>Usuários encontrados</th><td>{esc(diagnostics.get("users", "erro"))}</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="muted">
+      Corrija as variáveis do Render e o disco persistente. Para liberar setup manual
+      temporariamente no Render, defina ALLOW_RENDER_SETUP=1.
+    </p>
+  </section>
+</div>
+"""
+    return layout("Configuração necessária", content, show_nav=False)
+
+
 def login_page(error: str = "") -> bytes:
     error_html = f'<section class="error">{esc(error)}</section>' if error else ""
     content = f"""
@@ -2101,6 +2140,26 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header(key, value)
         self.end_headers()
 
+    def users_state(self, context: str) -> bool | None:
+        try:
+            users_exist = has_users()
+        except Exception as exc:
+            log_auth_diagnostics(f"{context} erro ao consultar usuários: {exc}")
+            self.respond(500, configuration_error_page(str(exc)))
+            return None
+        if not users_exist:
+            log_auth_diagnostics(f"{context} nenhum usuário encontrado")
+            if not setup_screen_allowed():
+                self.respond(
+                    500,
+                    configuration_error_page(
+                        "Nenhum usuário foi encontrado no banco atual. "
+                        "No Render, configure APP_ADMIN_USER, APP_ADMIN_PASSWORD e disco persistente."
+                    ),
+                )
+                return None
+        return users_exist
+
     def do_GET(self) -> None:
         set_layout_username("")
         parsed = urlparse(self.path)
@@ -2113,11 +2172,17 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_file(logo_path, "image/svg+xml", disposition="inline")
             return self.respond(404, layout("Erro", '<section class="error">Logo não encontrada.</section>'))
         if path == "/setup":
-            if has_users():
+            users_exist = self.users_state("GET /setup")
+            if users_exist is None:
+                return
+            if users_exist:
                 return self.redirect("/login")
             return self.respond(200, setup_page())
         if path == "/login":
-            if not has_users():
+            users_exist = self.users_state("GET /login")
+            if users_exist is None:
+                return
+            if not users_exist:
                 return self.redirect("/setup")
             if self.current_user() is not None:
                 return self.redirect("/")
@@ -2125,7 +2190,10 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/favicon.ico":
             return self.respond(404, b"", "text/plain")
 
-        if not has_users():
+        users_exist = self.users_state(f"GET {path}")
+        if users_exist is None:
+            return
+        if not users_exist:
             return self.redirect("/setup")
         if self.current_user() is None:
             return self.redirect("/login")
@@ -2180,7 +2248,10 @@ class Handler(BaseHTTPRequestHandler):
             delete_session(token)
             return self.redirect("/login", {"Set-Cookie": self.clear_session_cookie()})
 
-        if not has_users():
+        users_exist = self.users_state(f"POST {path}")
+        if users_exist is None:
+            return
+        if not users_exist:
             return self.redirect("/setup")
         if self.current_user() is None:
             return self.redirect("/login")
@@ -2257,7 +2328,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.respond(400, form_page(str(exc), data))
 
     def handle_setup(self) -> None:
-        if has_users():
+        users_exist = self.users_state("POST /setup")
+        if users_exist is None:
+            return
+        if users_exist:
             return self.redirect("/login")
         length = int(self.headers.get("Content-Length", "0"))
         data = parse_form(self.rfile.read(length))
@@ -2424,6 +2498,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def handle_temperature_delete(self, path: str) -> None:
         filename = unquote(path.rsplit("/", 1)[-1])
+        log_auth_diagnostics(f"POST excluir mapa antes arquivo={filename}")
         file_path = temperature_output_file(filename)
         if file_path is None or file_path.suffix.lower() != ".xlsx":
             return self.respond(404, layout("Erro", '<section class="error">Mapa não encontrado.</section>'))
@@ -2431,6 +2506,7 @@ class Handler(BaseHTTPRequestHandler):
         file_path.unlink(missing_ok=True)
         if pdf_path is not None:
             pdf_path.unlink(missing_ok=True)
+        log_auth_diagnostics(f"POST excluir mapa depois arquivo={filename}")
         return self.redirect("/mapa-temperatura")
 
     def handle_download(self, path: str) -> None:
@@ -2492,6 +2568,7 @@ class Handler(BaseHTTPRequestHandler):
 def run() -> None:
     init_db()
     print(f"Banco de dados em: {DB_PATH.resolve()}")
+    log_auth_diagnostics("startup")
     preferred_port = int(os.environ.get("PORT", PORT))
     server = None
     selected_port = preferred_port
