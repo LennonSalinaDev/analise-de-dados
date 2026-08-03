@@ -5,10 +5,12 @@ import secrets
 import shutil
 import subprocess
 import tempfile
+import zipfile
 from calendar import monthrange
 from copy import copy
 from dataclasses import dataclass
 from datetime import date, datetime
+from importlib.util import find_spec
 from pathlib import Path
 
 from openpyxl import load_workbook
@@ -178,6 +180,60 @@ def ensure_temperature_template(map_type: str) -> Path:
     return template_path
 
 
+def log_temperature_map(message: str) -> None:
+    print(f"[mapa-temperatura] {message}", flush=True)
+
+
+def xlsx_package_diagnostics(path: Path) -> dict[str, object]:
+    info: dict[str, object] = {
+        "path": str(path),
+        "exists": path.exists(),
+    }
+    if not path.exists():
+        return info
+
+    info["size"] = path.stat().st_size
+    try:
+        with zipfile.ZipFile(path) as archive:
+            names = archive.namelist()
+            media = sorted(name for name in names if name.startswith("xl/media/"))
+            drawings = sorted(name for name in names if name.startswith("xl/drawings/"))
+            rels = sorted(
+                name
+                for name in names
+                if name.startswith("xl/worksheets/_rels/") or name.startswith("xl/drawings/_rels/")
+            )
+            info["media_count"] = len(media)
+            info["media"] = media
+            info["drawing_count"] = len(drawings)
+            info["drawing_files"] = drawings
+            info["relationship_files"] = rels
+    except Exception as exc:
+        info["zip_error"] = str(exc)
+    return info
+
+
+def log_xlsx_diagnostics(label: str, path: Path) -> dict[str, object]:
+    info = xlsx_package_diagnostics(path)
+    media = ", ".join(info.get("media", []) or ["sem mídia"])
+    drawings = ", ".join(info.get("drawing_files", []) or ["sem drawings"])
+    log_temperature_map(
+        f"{label}: exists={info.get('exists')} size={info.get('size')} "
+        f"media_count={info.get('media_count')} media={media} "
+        f"drawing_count={info.get('drawing_count')} drawings={drawings}"
+    )
+    if info.get("zip_error"):
+        log_temperature_map(f"{label}: erro ao inspecionar xlsx: {info['zip_error']}")
+    return info
+
+
+def count_openpyxl_images(workbook) -> int:
+    total = 0
+    for worksheet in workbook.worksheets:
+        total += len(getattr(worksheet, "_images", []) or [])
+    return total
+
+
 def inactive_temperature_days(data: TemperatureMapInput) -> set[int]:
     days_in_month = monthrange(data.ano, data.mes)[1]
     inactive_days = set(data.dias_extras)
@@ -222,7 +278,14 @@ def render_temperature_map(data: TemperatureMapInput, map_type: str = "geral") -
     template_path = ensure_temperature_template(map_type)
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
+    pillow_available = find_spec("PIL") is not None
+    log_temperature_map(
+        f"iniciando geração: tipo={map_type} mês={data.mes} ano={data.ano} "
+        f"filial={data.filial} pillow={pillow_available}"
+    )
+    template_info = log_xlsx_diagnostics("modelo antes do openpyxl", template_path)
     workbook = load_workbook(template_path)
+    log_temperature_map(f"imagens carregadas pelo openpyxl={count_openpyxl_images(workbook)}")
     worksheet = workbook.active
     worksheet[config["month_cell"]] = data.mes_nome
     worksheet[config["year_cell"]] = data.ano
@@ -239,6 +302,12 @@ def render_temperature_map(data: TemperatureMapInput, map_type: str = "geral") -
     )
     output_path = OUTPUT_DIR / filename
     workbook.save(output_path)
+    output_info = log_xlsx_diagnostics("arquivo gerado depois do openpyxl", output_path)
+    if (template_info.get("media_count") or 0) > 0 and (output_info.get("media_count") or 0) == 0:
+        log_temperature_map(
+            "alerta: o modelo possui imagem, mas o arquivo gerado ficou sem mídia. "
+            "Verifique se Pillow foi instalado no ambiente do Render."
+        )
     return output_path
 
 
