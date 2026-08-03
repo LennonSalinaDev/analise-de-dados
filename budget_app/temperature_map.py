@@ -481,26 +481,41 @@ def convert_xlsx_to_pdf_with_libreoffice(xlsx_path: Path) -> tuple[Path | None, 
                 **os.environ,
                 "HOME": os.environ.get("HOME", "/tmp"),
                 "SAL_USE_VCLPLUGIN": os.environ.get("SAL_USE_VCLPLUGIN", "svp"),
+                "SAL_DISABLE_OPENCL": os.environ.get("SAL_DISABLE_OPENCL", "1"),
+                "SAL_DISABLE_GL": os.environ.get("SAL_DISABLE_GL", "1"),
+                "JAVA_TOOL_OPTIONS": os.environ.get("JAVA_TOOL_OPTIONS", "-Xmx96m"),
             }
+            command = [
+                soffice,
+                "--headless",
+                "--nologo",
+                "--nodefault",
+                "--nolockcheck",
+                "--norestore",
+                "--nofirststartwizard",
+                f"-env:UserInstallation={profile_dir.as_uri()}",
+                "--convert-to",
+                "pdf",
+                "--outdir",
+                str(output_dir),
+                str(source_path),
+            ]
+            log_temperature_map(
+                "pdf libreoffice: executando conversão "
+                f"timeout=75s output_dir={output_dir} profile={profile_dir}"
+            )
             result = subprocess.run(
-                [
-                    soffice,
-                    "--headless",
-                    "--nologo",
-                    "--nofirststartwizard",
-                    f"-env:UserInstallation={profile_dir.as_uri()}",
-                    "--convert-to",
-                    "pdf",
-                    "--outdir",
-                    str(output_dir),
-                    str(source_path),
-                ],
+                command,
                 check=False,
                 capture_output=True,
                 text=True,
-                timeout=120,
+                timeout=75,
                 env=env,
             )
+            log_temperature_map(f"pdf libreoffice: subprocess finalizado returncode={result.returncode}")
+    except subprocess.TimeoutExpired as exc:
+        log_temperature_map("pdf libreoffice: timeout após 75s")
+        return None, f"LibreOffice não gerou o PDF: tempo limite excedido. {exc}"
     except Exception as exc:
         log_temperature_map(f"pdf libreoffice: exceção={compact_error_detail(str(exc), 500)}")
         return None, f"LibreOffice não gerou o PDF: {exc}"
@@ -541,6 +556,9 @@ def convert_xlsx_to_pdf_with_docker(xlsx_path: Path) -> tuple[Path | None, str]:
                 image,
                 "--headless",
                 "--nologo",
+                "--nodefault",
+                "--nolockcheck",
+                "--norestore",
                 "--nofirststartwizard",
                 "--convert-to",
                 "pdf",
@@ -551,8 +569,10 @@ def convert_xlsx_to_pdf_with_docker(xlsx_path: Path) -> tuple[Path | None, str]:
             check=False,
             capture_output=True,
             text=True,
-            timeout=120,
+            timeout=75,
         )
+    except subprocess.TimeoutExpired as exc:
+        return None, f"Docker/LibreOffice não gerou o PDF: tempo limite excedido. {exc}"
     except Exception as exc:
         log_temperature_map(f"pdf docker: exceção={compact_error_detail(str(exc), 500)}")
         return None, f"Docker/LibreOffice não gerou o PDF: {exc}"
