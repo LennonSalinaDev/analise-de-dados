@@ -2511,14 +2511,18 @@ class Handler(BaseHTTPRequestHandler):
 
     def handle_temperature_pdf(self, path: str) -> None:
         filename = unquote(path.rsplit("/", 1)[-1])
+        log_auth_diagnostics(f"{runtime_marker()} POST PDF mapa início arquivo={filename}")
         xlsx_path = temperature_output_file(filename)
         if xlsx_path is None or xlsx_path.suffix.lower() != ".xlsx":
+            log_auth_diagnostics(f"{runtime_marker()} POST PDF mapa xlsx não encontrado arquivo={filename}")
             return self.respond(404, layout("Erro", '<section class="error">Arquivo XLSX não encontrado.</section>'))
 
         pdf_path = temperature_output_file(f"{xlsx_path.stem}.pdf")
         pdf_status = ""
         if pdf_path is None:
+            log_auth_diagnostics(f"{runtime_marker()} POST PDF mapa antes conversão arquivo={filename}")
             pdf_path, pdf_status = convert_temperature_map_to_pdf(xlsx_path)
+            log_auth_diagnostics(f"{runtime_marker()} POST PDF mapa depois conversão arquivo={filename} pdf_ok={pdf_path is not None}")
             if pdf_path is None:
                 print(f"Falha ao gerar PDF do mapa {xlsx_path.name}: {pdf_status}", flush=True)
                 return self.redirect(
@@ -2526,6 +2530,7 @@ class Handler(BaseHTTPRequestHandler):
                     f"?arquivo={quote(xlsx_path.name)}&pdf_status={quote(pdf_status)}"
                 )
 
+        log_auth_diagnostics(f"{runtime_marker()} POST PDF mapa antes redirect arquivo={filename}")
         return self.redirect(f"/mapa-temperatura?arquivo={quote(xlsx_path.name)}&pdf={quote(xlsx_path.name)}")
 
     def handle_temperature_delete(self, path: str) -> None:

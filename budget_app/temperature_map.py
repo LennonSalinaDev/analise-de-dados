@@ -316,11 +316,14 @@ def powershell_quote(value: str) -> str:
 
 
 def convert_xlsx_to_pdf_with_excel(xlsx_path: Path) -> tuple[Path | None, str]:
+    log_temperature_map(f"pdf excel: início arquivo={xlsx_path.name}")
     if os.name != "nt":
+        log_temperature_map("pdf excel: ignorado porque ambiente não é Windows")
         return None, "Microsoft Excel disponível apenas no Windows."
 
     powershell = shutil.which("powershell") or shutil.which("pwsh")
     if not powershell:
+        log_temperature_map("pdf excel: PowerShell não encontrado")
         return None, "PowerShell não encontrado para acionar o Microsoft Excel."
 
     source_path = xlsx_path.resolve()
@@ -374,10 +377,12 @@ try {{
     )
     if result.returncode == 0 and temp_path.exists():
         temp_path.replace(pdf_path)
+        log_temperature_map(f"pdf excel: sucesso arquivo={pdf_path.name}")
         return pdf_path, "PDF gerado com sucesso pelo Microsoft Excel."
 
     temp_path.unlink(missing_ok=True)
     detail = (result.stderr or result.stdout or "erro desconhecido").strip()
+    log_temperature_map(f"pdf excel: falha returncode={result.returncode} detalhe={compact_error_detail(detail, 500)}")
     return None, f"Microsoft Excel não gerou o PDF: {detail}"
 
 
@@ -403,9 +408,12 @@ def compact_error_detail(value: str, limit: int = 1200) -> str:
 
 
 def convert_xlsx_to_pdf_with_libreoffice(xlsx_path: Path) -> tuple[Path | None, str]:
+    log_temperature_map(f"pdf libreoffice: início arquivo={xlsx_path.name}")
     soffice = find_soffice()
     if not soffice:
+        log_temperature_map("pdf libreoffice: soffice não encontrado")
         return None, "LibreOffice/soffice não encontrado."
+    log_temperature_map(f"pdf libreoffice: soffice={soffice}")
 
     source_path = xlsx_path.resolve()
     output_dir = xlsx_path.parent.resolve()
@@ -440,17 +448,22 @@ def convert_xlsx_to_pdf_with_libreoffice(xlsx_path: Path) -> tuple[Path | None, 
                 env=env,
             )
     except Exception as exc:
+        log_temperature_map(f"pdf libreoffice: exceção={compact_error_detail(str(exc), 500)}")
         return None, f"LibreOffice não gerou o PDF: {exc}"
 
     if result.returncode == 0 and pdf_path.exists():
+        log_temperature_map(f"pdf libreoffice: sucesso arquivo={pdf_path.name} stdout={compact_error_detail(result.stdout, 300)}")
         return pdf_path, "PDF gerado com sucesso pelo LibreOffice."
     detail = compact_error_detail(result.stderr or result.stdout)
+    log_temperature_map(f"pdf libreoffice: falha returncode={result.returncode} detalhe={compact_error_detail(detail, 500)}")
     return None, f"LibreOffice não gerou o PDF: {detail}"
 
 
 def convert_xlsx_to_pdf_with_docker(xlsx_path: Path) -> tuple[Path | None, str]:
+    log_temperature_map(f"pdf docker: início arquivo={xlsx_path.name}")
     docker = shutil.which("docker")
     if not docker:
+        log_temperature_map("pdf docker: docker não encontrado")
         return None, "Docker não encontrado."
 
     image = os.environ.get("LIBREOFFICE_DOCKER_IMAGE", "orcamento-clamed-local")
@@ -487,11 +500,14 @@ def convert_xlsx_to_pdf_with_docker(xlsx_path: Path) -> tuple[Path | None, str]:
             timeout=120,
         )
     except Exception as exc:
+        log_temperature_map(f"pdf docker: exceção={compact_error_detail(str(exc), 500)}")
         return None, f"Docker/LibreOffice não gerou o PDF: {exc}"
 
     if result.returncode == 0 and pdf_path.exists():
+        log_temperature_map(f"pdf docker: sucesso arquivo={pdf_path.name}")
         return pdf_path, "PDF gerado com sucesso pelo LibreOffice no Docker."
     detail = compact_error_detail(result.stderr or result.stdout)
+    log_temperature_map(f"pdf docker: falha returncode={result.returncode} detalhe={compact_error_detail(detail, 500)}")
     return None, f"Docker/LibreOffice não gerou o PDF: {detail}"
 
 
@@ -502,9 +518,12 @@ def convert_temperature_map_to_pdf(xlsx_path: Path) -> tuple[Path | None, str]:
         convert_xlsx_to_pdf_with_docker,
         convert_xlsx_to_pdf_with_excel,
     ):
+        log_temperature_map(f"pdf fluxo: tentando conversor={converter.__name__} arquivo={xlsx_path.name}")
         pdf_path, status = converter(xlsx_path)
         if pdf_path is not None:
+            log_temperature_map(f"pdf fluxo: sucesso conversor={converter.__name__} status={status}")
             return pdf_path, status
+        log_temperature_map(f"pdf fluxo: falha conversor={converter.__name__} status={compact_error_detail(status, 700)}")
         errors.append(status)
     detail = " | ".join(errors)
     if os.environ.get("RENDER") and "LibreOffice/soffice não encontrado" in detail:
