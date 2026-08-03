@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import os
 import secrets
 import sqlite3
@@ -314,11 +315,22 @@ def mark_setup_completed() -> None:
     SETUP_LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
     if SETUP_LOCK_PATH.exists():
         return
-    SETUP_LOCK_PATH.write_text(datetime.now().isoformat(timespec="seconds"), encoding="utf-8")
+    payload = {
+        "setup_completed": True,
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "db_path": str(DB_PATH.resolve()),
+    }
+    SETUP_LOCK_PATH.write_text(json.dumps(payload, ensure_ascii=True), encoding="utf-8")
 
 
 def setup_completed() -> bool:
-    return SETUP_LOCK_PATH.exists()
+    if not SETUP_LOCK_PATH.exists():
+        return False
+    try:
+        payload = json.loads(SETUP_LOCK_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return not os.environ.get("RENDER")
+    return bool(payload.get("setup_completed"))
 
 
 def has_users() -> bool:
@@ -342,11 +354,7 @@ def count_users() -> int:
 
 
 def setup_screen_allowed() -> bool:
-    if not os.environ.get("RENDER"):
-        return True
-    if os.environ.get("ALLOW_RENDER_SETUP") == "1":
-        return True
-    return not setup_completed()
+    return True
 
 
 def auth_diagnostics() -> dict[str, object]:

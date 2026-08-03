@@ -8,6 +8,8 @@ __pycache__
 data/*.db
 data/*.db-*
 data/*.csv
+data/*.lock
+orcamentos.db
 saida
 tmp
 server*.log

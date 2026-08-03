@@ -46,7 +46,7 @@ from .storage import (
     list_orcamentos,
     log_auth_diagnostics,
     save_orcamento,
-    setup_screen_allowed,
+    setup_completed,
     verify_login,
     DB_PATH,
 )
@@ -2150,15 +2150,6 @@ class Handler(BaseHTTPRequestHandler):
             return None
         if not users_exist:
             log_auth_diagnostics(f"{context} nenhum usuário encontrado")
-            if not setup_screen_allowed():
-                self.respond(
-                    500,
-                    configuration_error_page(
-                        "Nenhum usuário foi encontrado no banco atual. "
-                        "Como o setup já foi concluído antes, confira DB_PATH e o disco persistente."
-                    ),
-                )
-                return None
         return users_exist
 
     def do_GET(self) -> None:
@@ -2183,8 +2174,16 @@ class Handler(BaseHTTPRequestHandler):
             users_exist = self.users_state("GET /login")
             if users_exist is None:
                 return
-            if not users_exist:
+            if not users_exist and not setup_completed():
                 return self.redirect("/setup")
+            if not users_exist:
+                return self.respond(
+                    200,
+                    login_page(
+                        "Nenhum usuário foi encontrado no banco atual. "
+                        "Confira o disco persistente/DB_PATH antes de recriar o acesso."
+                    ),
+                )
             if self.current_user() is not None:
                 return self.redirect("/")
             return self.respond(200, login_page())
@@ -2194,8 +2193,10 @@ class Handler(BaseHTTPRequestHandler):
         users_exist = self.users_state(f"GET {path}")
         if users_exist is None:
             return
-        if not users_exist:
+        if not users_exist and not setup_completed():
             return self.redirect("/setup")
+        if not users_exist:
+            return self.redirect("/login")
         if self.current_user() is None:
             return self.redirect("/login")
 
@@ -2252,8 +2253,10 @@ class Handler(BaseHTTPRequestHandler):
         users_exist = self.users_state(f"POST {path}")
         if users_exist is None:
             return
-        if not users_exist:
+        if not users_exist and not setup_completed():
             return self.redirect("/setup")
+        if not users_exist:
+            return self.redirect("/login")
         if self.current_user() is None:
             return self.redirect("/login")
 

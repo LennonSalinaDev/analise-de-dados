@@ -148,7 +148,9 @@ O `render.yaml` também define um disco persistente em `/var/data` para guardar 
 
 No primeiro acesso, se ainda não houver usuário, o Render pode abrir `/setup` normalmente para criar o acesso administrador. Para criar esse administrador automaticamente, configure `APP_ADMIN_USER` e `APP_ADMIN_PASSWORD` como variáveis secretas no painel do Render. Quando o banco estiver vazio, o app cria esse administrador automático; quando já existir usuário, essas variáveis são ignoradas.
 
-Depois que o primeiro usuário é criado, o app grava um arquivo `setup.lock` no armazenamento de dados. A partir daí, se o banco desaparecer ou o serviço apontar para outro caminho, o app mostra uma tela de diagnóstico em vez de criar um novo acesso do zero. Nos logs, procure linhas iniciadas por `[auth]`; elas mostram o caminho do banco, se `DB_PATH` está definido, se a pasta é gravável, se o setup já foi feito e quantos usuários foram encontrados, sem expor senha.
+Depois que o primeiro usuário é criado, o app grava um arquivo `setup.lock` no armazenamento de dados. A partir daí, se o banco desaparecer ou o serviço apontar para outro caminho durante o uso, o app não redireciona automaticamente para `/setup`; ele volta para `/login` com aviso. O cadastro em `/setup` continua acessível se for uma decisão manual do usuário/administrador. Nos logs, procure linhas iniciadas por `[auth]`; elas mostram o caminho do banco, se `DB_PATH` está definido, se a pasta é gravável, se o setup já foi feito e quantos usuários foram encontrados, sem expor senha.
+
+O arquivo `.dockerignore` exclui `data/*.lock`, bancos locais e saídas geradas para evitar que dados da máquina de desenvolvimento sejam copiados para a imagem Docker do Render.
 
 Se você estiver criando manualmente como Python, o DOCX/XLSX funciona, mas o PDF não terá LibreOffice instalado por padrão. Para gerar PDF na nuvem, use Docker. Nesse modo Python nativo, só configure `DB_PATH=/var/data/orcamentos.db` se você realmente tiver um disco persistente montado em `/var/data`; caso contrário, o serviço não terá permissão para criar essa pasta.
 
