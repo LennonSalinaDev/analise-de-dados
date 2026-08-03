@@ -108,9 +108,18 @@ Depois use a URL `https://...trycloudflare.com` exibida pelo `cloudflared`.
 
 Se estiver usando o painel da Cloudflare Pages, remova o deploy command `npx wrangler deploy`. Para este projeto, Cloudflare Pages não é o ambiente correto enquanto o sistema depender de Python, SQLite local e geração de PDF pelo Word.
 
-## Deploy gratuito no Render
+## Deploy no Render
 
-O arquivo `render.yaml` deixa o projeto pronto para um Web Service gratuito no Render usando Docker.
+O projeto mantém duas opções de deploy no Render:
+
+- `render.yaml`: opção principal usando Docker + LibreOffice.
+- `render-python.yaml`: opção alternativa usando Python nativo, sem LibreOffice garantido.
+
+Use Docker quando quiser tentar gerar PDF no servidor. Use Python nativo apenas como segunda opção para testar o app gerando DOCX/XLSX.
+
+### Opção principal: Docker
+
+O arquivo `render.yaml` deixa o projeto pronto para um Web Service no Render usando Docker.
 
 Configuração esperada:
 
@@ -168,5 +177,22 @@ bash: line 1: Start: command not found
 ```
 
 No Render, o PDF pelo Microsoft Word não funciona, porque o ambiente é Linux e não tem Word instalado. Com o `Dockerfile` deste projeto, o LibreOffice Calc/Writer é instalado dentro da imagem e o sistema usa `soffice --headless` para converter DOCX/XLSX em PDF. Cada conversão usa um perfil temporário isolado do LibreOffice, reduzindo falhas intermitentes quando o serviço recebe mais de uma ação próxima.
+
+### Segunda opção: Python nativo
+
+Se quiser manter um deploy simples para teste sem Docker, use o arquivo `render-python.yaml` como referência.
+
+Configuração esperada:
+
+```text
+Runtime/Language: Python
+Build Command: pip install -r requirements.txt
+Start Command: python app.py
+Health Check Path: /healthz
+```
+
+Nesse modo, não configure `DB_PATH=/var/data/orcamentos.db` a menos que exista um disco persistente montado em `/var/data`. Sem esse disco, o Render pode retornar erro de permissão ao tentar criar `/var/data`.
+
+No Python nativo, o app continua gerando DOCX e XLSX. A conversão para PDF pode falhar porque o LibreOffice/soffice normalmente não vem instalado nesse runtime.
 
 Atenção: o histórico atual usa SQLite em arquivo local. Em hospedagem gratuita, isso serve para teste/demonstração, mas pode ser perdido em redeploy/restart. Para uso real em nuvem, o próximo passo é trocar o histórico para PostgreSQL.

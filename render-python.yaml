@@ -1,0 +1,22 @@
+# Opcao alternativa para Render usando Python nativo.
+# Use este arquivo apenas se quiser subir a aplicacao sem Docker/LibreOffice.
+# Nesse modo o app gera DOCX/XLSX, mas a conversao PDF no servidor pode nao funcionar.
+services:
+  - type: web
+    name: orcamento-clamed-python
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python app.py
+    healthCheckPath: /healthz
+    envVars:
+      - key: HOST
+        value: 0.0.0.0
+      - key: HOME
+        value: /tmp
+      - key: SAL_USE_VCLPLUGIN
+        value: svp
+      - key: APP_ADMIN_USER
+        sync: false
+      - key: APP_ADMIN_PASSWORD
+        sync: false
