@@ -706,6 +706,65 @@ def layout(title: str, content: str, *, show_nav: bool = True) -> bytes:
     .temperature-submit .primary {{
       width: 100%;
     }}
+    .section-title-actions {{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+    }}
+    .section-title-actions h2 {{
+      margin-bottom: 0;
+    }}
+    .section-title-actions form {{
+      margin: 0;
+    }}
+    .generation-progress {{
+      width: 100%;
+      margin-top: 10px;
+    }}
+    .generation-progress[hidden] {{
+      display: none;
+    }}
+    .progress {{
+      width: 100%;
+      height: 18px;
+      overflow: hidden;
+      border-radius: 6px;
+      background: #dfe8e3;
+      border: 1px solid var(--line-strong);
+      box-shadow: inset 0 1px 2px rgba(32, 39, 36, .08);
+    }}
+    .progress-bar {{
+      width: 0;
+      height: 100%;
+      min-width: 34px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      background-color: var(--accent);
+      background-image: linear-gradient(
+        45deg,
+        rgba(255, 255, 255, .18) 25%,
+        transparent 25%,
+        transparent 50%,
+        rgba(255, 255, 255, .18) 50%,
+        rgba(255, 255, 255, .18) 75%,
+        transparent 75%,
+        transparent
+      );
+      background-size: 18px 18px;
+      font-size: 11px;
+      font-weight: 900;
+      line-height: 1;
+      transition: width .22s ease;
+      animation: progress-stripes .7s linear infinite;
+    }}
+    @keyframes progress-stripes {{
+      from {{ background-position: 18px 0; }}
+      to {{ background-position: 0 0; }}
+    }}
     .form-switch {{
       display: flex;
       align-items: center;
@@ -1731,6 +1790,11 @@ def map_type_switches(data: dict[str, list[str]] | None = None) -> str:
         <div class="actions temperature-submit">
           <button class="primary" type="submit">Gerar mapa</button>
         </div>
+        <div class="generation-progress" id="map-generation-progress" hidden>
+          <div class="progress" role="progressbar" aria-label="Progresso da geração do mapa" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+            <div class="progress-bar" id="map-generation-progress-bar" style="width: 0%">0%</div>
+          </div>
+        </div>
       </div>
     """
 
@@ -2002,6 +2066,27 @@ def temperature_map_form_page(
 </form>
 {generated_html}
 <script>
+const temperatureForm = document.querySelector('form[action="/mapa-temperatura"]');
+const mapProgress = document.getElementById("map-generation-progress");
+const mapProgressBar = document.getElementById("map-generation-progress-bar");
+if (temperatureForm && mapProgress && mapProgressBar) {{
+  temperatureForm.addEventListener("submit", () => {{
+    let value = 8;
+    mapProgress.hidden = false;
+    mapProgressBar.style.width = value + "%";
+    mapProgressBar.textContent = value + "%";
+    mapProgressBar.parentElement.setAttribute("aria-valuenow", String(value));
+
+    const timer = window.setInterval(() => {{
+      value = Math.min(value + Math.ceil((92 - value) * 0.18), 92);
+      mapProgressBar.style.width = value + "%";
+      mapProgressBar.textContent = value + "%";
+      mapProgressBar.parentElement.setAttribute("aria-valuenow", String(value));
+      if (value >= 92) window.clearInterval(timer);
+    }}, 260);
+  }});
+}}
+
 document.querySelectorAll(".pdf-generate").forEach((button) => {{
   button.closest("form").addEventListener("submit", () => {{
     button.disabled = true;
@@ -2074,7 +2159,12 @@ def temperature_maps_section(
         )
     return f"""
 <section>
-  <h2 class="success-title">Mapas gerados</h2>
+  <div class="section-title-actions">
+    <h2 class="success-title">Mapas gerados</h2>
+    <form method="post" action="/mapa-temperatura/excluir-todos" onsubmit="return confirm('Excluir todos os mapas gerados?');">
+      <button class="danger" type="submit">Excluir tudo</button>
+    </form>
+  </div>
   <div class="table-wrap">
     <table class="history temperature-history">
       <thead><tr><th></th><th></th></tr></thead>
@@ -2286,6 +2376,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.handle_temperature_map()
         if path.startswith("/mapa-temperatura/pdf/"):
             return self.handle_temperature_pdf(path)
+        if path == "/mapa-temperatura/excluir-todos":
+            return self.handle_temperature_delete_all()
         if path.startswith("/mapa-temperatura/excluir/"):
             return self.handle_temperature_delete(path)
         if path.startswith("/farmaceuticos/") and path.endswith("/excluir"):
@@ -2544,6 +2636,19 @@ class Handler(BaseHTTPRequestHandler):
         if pdf_path is not None:
             pdf_path.unlink(missing_ok=True)
         log_auth_diagnostics(f"POST excluir mapa depois arquivo={filename}")
+        return self.redirect("/mapa-temperatura")
+
+    def handle_temperature_delete_all(self) -> None:
+        log_auth_diagnostics(f"{runtime_marker()} POST excluir todos mapas antes")
+        deleted = 0
+        for xlsx_path in list_temperature_maps():
+            pdf_path = temperature_output_file(f"{xlsx_path.stem}.pdf")
+            xlsx_path.unlink(missing_ok=True)
+            deleted += 1
+            if pdf_path is not None:
+                pdf_path.unlink(missing_ok=True)
+                deleted += 1
+        log_auth_diagnostics(f"{runtime_marker()} POST excluir todos mapas depois arquivos={deleted}")
         return self.redirect("/mapa-temperatura")
 
     def handle_download(self, path: str) -> None:
