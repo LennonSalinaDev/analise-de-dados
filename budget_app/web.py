@@ -46,6 +46,7 @@ from .storage import (
     list_orcamentos,
     log_auth_diagnostics,
     save_orcamento,
+    token_hash,
     verify_login,
     DB_PATH,
 )
@@ -80,6 +81,10 @@ def set_layout_username(username: str | None) -> None:
 
 def layout_username() -> str:
     return getattr(_REQUEST_CONTEXT, "username", "")
+
+
+def short_token(token: str | None) -> str:
+    return token_hash(token)[:10] if token else "none"
 
 
 def parse_form(body: bytes) -> dict[str, list[str]]:
@@ -2088,8 +2093,14 @@ class Handler(BaseHTTPRequestHandler):
         return morsel.value if morsel else None
 
     def current_user(self):
-        user = get_user_by_session(self.request_session_token())
+        token = self.request_session_token()
+        user = get_user_by_session(token)
         set_layout_username(user["username"] if user is not None else "")
+        print(
+            f"[request] current_user path={urlparse(self.path).path} "
+            f"session={short_token(token)} user_id={user['id'] if user is not None else 'none'}",
+            flush=True,
+        )
         return user
 
     def is_https(self) -> bool:
@@ -2132,6 +2143,12 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def redirect(self, path: str, extra_headers: dict[str, str] | None = None) -> None:
+        set_cookie = bool(extra_headers and "Set-Cookie" in extra_headers)
+        print(
+            f"[request] redirect from={urlparse(self.path).path} to={path} "
+            f"session={short_token(self.request_session_token())} set_cookie={set_cookie}",
+            flush=True,
+        )
         self.send_response(303)
         self.send_header("Location", path)
         self.send_header("Cache-Control", "no-store")
@@ -2155,6 +2172,10 @@ class Handler(BaseHTTPRequestHandler):
         set_layout_username("")
         parsed = urlparse(self.path)
         path = parsed.path
+        print(
+            f"[request] GET path={path} session={short_token(self.request_session_token())}",
+            flush=True,
+        )
         if path == "/healthz":
             return self.respond(200, b"ok", "text/plain; charset=utf-8")
         if path == f"/assets/{LOGO_FILENAME}":
@@ -2230,6 +2251,10 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         set_layout_username("")
         path = urlparse(self.path).path
+        print(
+            f"[request] POST path={path} session={short_token(self.request_session_token())}",
+            flush=True,
+        )
         if path == "/setup":
             return self.handle_setup()
         if path == "/login":
@@ -2334,7 +2359,7 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError("As senhas não conferem.")
             user_id = create_user(username, password)
             token = create_session(user_id)
-            log_auth_diagnostics("POST /setup usuário criado")
+            log_auth_diagnostics(f"POST /setup usuário criado user_id={user_id} session={short_token(token)}")
         except Exception as exc:
             return self.respond(400, setup_page(str(exc)))
         return self.redirect("/", {"Set-Cookie": self.session_cookie(token)})
@@ -2348,9 +2373,11 @@ class Handler(BaseHTTPRequestHandler):
         if user is None:
             return self.respond(401, login_page("Usuário ou senha inválidos."))
         token = create_session(int(user["id"]))
+        log_auth_diagnostics(f"POST /login sessão criada user_id={user['id']} session={short_token(token)}")
         return self.redirect("/", {"Set-Cookie": self.session_cookie(token)})
 
     def handle_temperature_map(self) -> None:
+        log_auth_diagnostics("POST /mapa-temperatura antes de ler formulário")
         length = int(self.headers.get("Content-Length", "0"))
         data = parse_form(self.rfile.read(length))
         try:
@@ -2378,11 +2405,16 @@ class Handler(BaseHTTPRequestHandler):
 
             generated_names = []
             for map_type in map_types:
+                log_auth_diagnostics(f"POST /mapa-temperatura antes gerar tipo={map_type}")
                 xlsx_path = render_temperature_map(mapa, map_type)
                 generated_names.append(xlsx_path.name)
+                log_auth_diagnostics(f"POST /mapa-temperatura depois gerar tipo={map_type}")
             query_parts = [f"arquivo={quote(name)}" for name in generated_names]
-            return self.redirect("/mapa-temperatura?" + "&".join(query_parts))
+            destination = "/mapa-temperatura?" + "&".join(query_parts)
+            log_auth_diagnostics(f"POST /mapa-temperatura antes redirect destino={destination}")
+            return self.redirect(destination)
         except Exception as exc:
+            log_auth_diagnostics(f"POST /mapa-temperatura erro={exc}")
             return self.respond(400, temperature_map_form_page(str(exc), data))
 
     def handle_add_farmaceutico(self) -> None:
@@ -2560,6 +2592,12 @@ class Handler(BaseHTTPRequestHandler):
 def run() -> None:
     init_db()
     print(f"Banco de dados em: {DB_PATH.resolve()}")
+    if os.environ.get("RENDER") and not os.environ.get("DB_PATH"):
+        print(
+            "[auth] alerta=DB_PATH não definido no Render; o app está usando armazenamento interno da imagem. "
+            "Configure DB_PATH=/var/data/orcamentos.db e disco persistente em /var/data.",
+            flush=True,
+        )
     log_auth_diagnostics("startup")
     preferred_port = int(os.environ.get("PORT", PORT))
     server = None

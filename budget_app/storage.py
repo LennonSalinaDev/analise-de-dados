@@ -385,6 +385,18 @@ def auth_diagnostics() -> dict[str, object]:
         diagnostics["users"] = count_users()
     except Exception as exc:
         diagnostics["users_error"] = str(exc)
+    try:
+        with connect() as conn:
+            row = conn.execute("SELECT COUNT(*) AS total FROM app_sessions").fetchone()
+            diagnostics["sessions"] = int(row["total"] if row is not None else 0)
+            row = conn.execute("SELECT COUNT(*) AS total FROM orcamentos").fetchone()
+            diagnostics["orcamentos"] = int(row["total"] if row is not None else 0)
+            tables = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"
+            ).fetchall()
+            diagnostics["tables"] = ",".join(row["name"] for row in tables)
+    except Exception as exc:
+        diagnostics["db_detail_error"] = str(exc)
     return diagnostics
 
 
@@ -405,9 +417,14 @@ def log_auth_diagnostics(context: str) -> None:
         f"app_admin_password_set={data.get('app_admin_password_set')}",
         f"render_setup_allowed={data.get('render_setup_allowed')}",
         f"users={data.get('users', 'erro')}",
+        f"sessions={data.get('sessions', 'erro')}",
+        f"orcamentos={data.get('orcamentos', 'erro')}",
+        f"tables={data.get('tables', 'erro')}",
     ]
     if data.get("users_error"):
         parts.append(f"users_error={data['users_error']}")
+    if data.get("db_detail_error"):
+        parts.append(f"db_detail_error={data['db_detail_error']}")
     print("[auth] " + " ".join(parts), flush=True)
 
 
